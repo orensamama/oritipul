@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-heebo: 'Heebo', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  direction: rtl;
+  font-family: var(--font-heebo), sans-serif;
+  background: linear-gradient(160deg, #f4f7f4 0%, #fdf8f2 100%);
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+textarea {
+  resize: none;
+  font-family: inherit;
+  direction: rtl;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar        { width: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #c5d7c5; border-radius: 2px; }
