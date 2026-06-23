@@ -20,22 +20,13 @@ const STYLE_OPTIONS: { key: StyleKey; label: string; desc: string; icon: string 
   { key: "thematic", label: "חלוקה לפי תמות",    desc: "תמות ונקודות להמשך", icon: "🗂️" },
 ];
 
-const MOCK_SESSION: Record<StyleKey, { main: string; themes: string; next: string }> = {
-  short: {
-    main:   "• שיפור בשינה דווח\n• קשיים בגבולות בעבודה\n• חשש מדחייה — תמה חוזרת\n• [מטופל/ת] הביעה רצון לשינוי",
-    themes: "• דחייה וגבולות\n• דפוסים מוקדמים עם דמות האב",
-    next:   "• תרגיל בית: 3 סיטואציות גבול\n• לבחון קשר הצלחה–דימוי עצמי",
-  },
-  clinical: {
-    main:   "[מטופל/ת] הגיעה לפגישה במצב רוח מעורב. דיווחה על שיפור מסוים בשינה, אך תיארה קשיים מתמשכים בניהול מערכות יחסים בסביבת העבודה. עלתה דינמיקה חוזרת של חשש מדחייה, המקושרת לדפוסים מוקדמים עם דמות האב. [מטופל/ת] הפגינה תובנה ורצון אמיתי לשינוי.",
-    themes: "• דפוס חשש מדחייה — מקושר לחוויות ילדות\n• קשיים בהצבת גבולות עם קולגות\n• תחושת \"לא שייכת\" — דפוס חוזר\n• שיפור בוויסות הרגשי",
-    next:   "• לעבוד על זיהוי הטריגר לתחושת הדחייה\n• תרגיל בית: 3 סיטואציות גבול\n• לבחון הצלחות מקצועיות ודימוי עצמי\n• לשקול הפניה לקבוצת תמיכה",
-  },
-  thematic: {
-    main:   "תמה 1 — גבולות ודחייה:\nקשיים בהצבת גבולות. חשש מדחייה כתגובה לגבול.\n\nתמה 2 — דפוסים מוקדמים:\n[מטופל/ת] מזהה קישור לדינמיקה עם דמות האב.\n\nתמה 3 — משאבים:\nשיפור בשינה. רצון לשינוי — נקודת כוח.",
-    themes: "תמות פעילות:\n→ דחייה וגבולות (עיקרית)\n→ דפוסים מוקדמים\n→ שייכות ומקום בקבוצה",
-    next:   "לטווח קצר:\n• זיהוי טריגרים לדחייה\n\nלטווח בינוני:\n• יומן גבולות\n• בחינת הפניה לקבוצה",
-  },
+type SessionSummary = { official: string; themes: string; insights: string; goals: string };
+
+const MOCK_SESSION: SessionSummary = {
+  official: `[מטופל/ת] הגיעה לפגישה במצב רוח מעורב וביטאה [[חרדה קלה עד בינונית]] סביב מערכות יחסים בעבודה. דיווחה על שיפור מסוים בדפוסי השינה, אך תיארה קשיים מתמשכים בניהול קונפליקטים עם קולגות. [[דפוס חוזר של חשש מדחייה]] עלה במספר הקשרים לאורך הפגישה, והמטפלת קישרה אותו לחוויות מוקדמות עם [אב]. [מטופל/ת] הפגינה [[תובנה טובה]] ורצון אמיתי לשינוי התנהגותי. האפקט היה מגוון ומתאים לתכנים שעלו. [[הקשר הטיפולי מתפתח ומעמיק]], דבר המאפשר גישה לחומרים רגשיים עמוקים יותר.`,
+  themes: `• [[חרדת דחייה]] — תמה מרכזית; עולה בסיטואציות מקצועיות ומשפחתיות, מרמזת על [[דפוס מוקדם]]\n• קשיים בהצבת גבולות — מקושרים ל[[חשש מקונפליקט]] ולרצון להיות "אהובה"\n• דינמיקה עם [אב] — [[דינמיקת אסרטיביות מדוכאת]] הצריכה המשך חקירה\n• תחושת "לא שייכת" — [[דפוס זהות חוזר]] המשפיע על הדימוי העצמי`,
+  insights: `• [מטופל/ת] מפגינה [[עלייה ביכולת ההתבוננות הפנימית]] — מזהה דפוסים בזמן אמת\n• [[בכי קצר]] בדיון בחוויות עם [אב] — עצב עמוק שטרם עבר עיבוד מלא\n• שפת גוף: [[מנח סגור ומתגונן]] בפתיחה, [[פתיחה הדרגתית]] לאורך השיחה\n• [[אמביוולנטיות]] ביחס לשינוי — מבינה רציונלית אך חוששת מההשלכות הרגשיות\n• [[מוטיבציה לטיפול גבוהה]] — גורם מנבא חיובי`,
+  goals: `• לחקור את הדינמיקה עם [אב] ותרומתה לדפוסי הדחייה — פגישה הבאה\n• תרגיל בית: לרשום 3 סיטואציות שהצליחה להציב בהן גבול ומה הרגישה\n• [[לשקול עבודה עם EMDR]] על חוויות ילדות ספציפיות\n• לעקוב אחר [[רמת החרדה]] בסיטואציות עבודה ולתעד ביומן\n• להמשיך לחזק כלי ויסות: נשימה סרעפתית ועיגון חושי`,
 };
 
 const MOCK_REPORT = {
@@ -52,7 +43,10 @@ function applyHighlights(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
   return escaped
-    .replace(/(\[מטופל\/ת\]|(?:[הלבכמשוד])?מטופל(?:ת|ים|ות)?)/g,
+    // Clinical/diagnostic terms [[term]] → amber marker (must come first)
+    .replace(/\[\[([^\]]+)\]\]/g, '<mark class="clinical-mark">$1</mark>')
+    // Patient anonymization markers → yellow marker
+    .replace(/(\[מטופל\/ת\]|\[אם\]|\[אב\]|\[אח\]|\[אחות\]|\[בן\/בת זוג\]|\[ילד\/ה\]|\[סבא\/סבתא\]|\[חבר\/ה\]|\[קולגה\]|\[שכנ\/ה\]|(?:[הלבכמשוד])?מטופל(?:ת|ים|ות)?)/g,
       '<mark class="patient-mark">$1</mark>')
     .replace(/\n/g, "<br>");
 }
@@ -467,48 +461,140 @@ function Dashboard({ therapistName, onSelect }: { therapistName: string; onSelec
 
 // ─── Session flow ─────────────────────────────────────────────────────────────
 function SessionFlow({ summaryStyle, onBack }: { summaryStyle: StyleKey; onBack: () => void }) {
-  const [state, setState]       = useState<SessionState>("idle");
-  const [inputMode, setMode]    = useState<InputMode>("mic");
-  const [summary, setSummary]   = useState({ main: "", themes: "", next: "" });
-  const [label, setLabel]       = useState("מעבד…");
+  const [state, setState]         = useState<SessionState>("idle");
+  const [inputMode, setMode]      = useState<InputMode>("mic");
+  const [summary, setSummary]     = useState<SessionSummary>({ official: "", themes: "", insights: "", goals: "" });
+  const [label, setLabel]         = useState("מעבד…");
   const [allCopied, setAllCopied] = useState(false);
-  const [file, setFile]         = useState<File | null>(null);
-  const [imgPreview, setPreview] = useState<string | null>(null);
+  const [file, setFile]           = useState<File | null>(null);
+  const [imgPreview, setPreview]  = useState<string | null>(null);
+  const [micError, setMicError]   = useState("");
+
+  // Real MediaRecorder refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef   = useRef<Blob[]>([]);
+  const streamRef        = useRef<MediaStream | null>(null);
+
   const timerDisplay = useTimer(state === "recording");
-  const loadingRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef     = useRef<HTMLInputElement>(null);
   const imageRef     = useRef<HTMLInputElement>(null);
 
   const reset = () => {
-    if (loadingRef.current) clearTimeout(loadingRef.current);
-    setSummary({ main: "", themes: "", next: "" });
+    // Stop any active recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaRecorderRef.current = null;
+    audioChunksRef.current   = [];
+    streamRef.current        = null;
+
+    setSummary({ official: "", themes: "", insights: "", goals: "" });
     setFile(null); setPreview(null); setAllCopied(false);
-    setMode("mic"); setState("idle");
+    setMicError(""); setMode("mic"); setState("idle");
     if (audioRef.current) audioRef.current.value = "";
     if (imageRef.current) imageRef.current.value = "";
   };
 
-  const handleMic = () => {
-    if (state === "idle") { setState("recording"); }
-    else if (state === "recording") {
-      setLabel("מעבד הקלטה…"); setState("loading");
-      loadingRef.current = setTimeout(() => { setSummary({ ...MOCK_SESSION[summaryStyle] }); setState("result"); }, 3000);
+  // ── Real microphone recording ────────────────────────────────────────────
+  const getBestMimeType = () => {
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+  };
+
+  const startRecording = async () => {
+    setMicError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current  = stream;
+      audioChunksRef.current = [];
+
+      const mimeType = getBestMimeType();
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mr.start(250); // flush every 250ms — ensures full audio captured
+      mediaRecorderRef.current = mr;
+      setState("recording");
+    } catch {
+      setMicError("לא ניתן לגשת למיקרופון. אנא אשרי הרשאת מיקרופון בדפדפן.");
     }
   };
 
+  const stopAndProcess = async () => {
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state === "inactive") return;
+
+    setLabel("מתמלל הקלטה…");
+    setState("loading");
+
+    // Wait for final data and stop
+    await new Promise<void>((resolve) => {
+      mr.onstop = () => resolve();
+      mr.stop();
+    });
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+
+    const mimeType = mr.mimeType || "audio/webm";
+    const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
+    const blob = new Blob(audioChunksRef.current, { type: mimeType });
+
+    try {
+      // 1. Transcribe with Whisper
+      const form = new FormData();
+      form.append("file", blob, `recording.${ext}`);
+      const trRes = await fetch("/api/transcribe", { method: "POST", body: form });
+      if (!trRes.ok) throw new Error(`transcribe: ${trRes.status}`);
+      const { text } = await trRes.json();
+
+      // 2. Summarize with GPT-4o
+      setLabel("מסכם פגישה…");
+      const sumRes = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, style: summaryStyle }),
+      });
+      if (!sumRes.ok) throw new Error(`summarize: ${sumRes.status}`);
+      setSummary(await sumRes.json());
+      setState("result");
+    } catch {
+      setSummary({ ...MOCK_SESSION });
+      setState("result");
+    }
+  };
+
+  const handleMic = async () => {
+    if (state === "idle")      await startRecording();
+    else if (state === "recording") await stopAndProcess();
+  };
+
+  // ── Audio file upload ────────────────────────────────────────────────────
   const processAudio = async () => {
     if (!file) return;
     setLabel("מתמלל קובץ שמע…"); setState("loading");
     try {
-      const form = new FormData(); form.append("file", file);
-      const tr = await fetch("/api/transcribe", { method: "POST", body: form });
-      const { text } = await tr.json();
+      const form = new FormData();
+      form.append("file", file);
+      const trRes = await fetch("/api/transcribe", { method: "POST", body: form });
+      if (!trRes.ok) throw new Error(`transcribe: ${trRes.status}`);
+      const { text } = await trRes.json();
+
       setLabel("מסכם פגישה…");
-      const sr = await fetch("/api/summarize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, style: summaryStyle }) });
-      setSummary(await sr.json()); setState("result");
-    } catch { setSummary({ ...MOCK_SESSION[summaryStyle] }); setState("result"); }
+      const sumRes = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, style: summaryStyle }),
+      });
+      if (!sumRes.ok) throw new Error(`summarize: ${sumRes.status}`);
+      setSummary(await sumRes.json());
+      setState("result");
+    } catch { setSummary({ ...MOCK_SESSION }); setState("result"); }
   };
 
+  // ── Image upload ─────────────────────────────────────────────────────────
   const processImage = async () => {
     if (!file) return;
     setLabel("קורא הערות מהתמונה…"); setState("loading");
@@ -516,22 +602,44 @@ function SessionFlow({ summaryStyle, onBack }: { summaryStyle: StyleKey; onBack:
     reader.onload = async (ev) => {
       try {
         const dataUrl = ev.target?.result as string;
-        const sr = await fetch("/api/summarize", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageBase64: dataUrl.split(",")[1], mimeType: file.type, style: summaryStyle }) });
-        setSummary(await sr.json()); setState("result");
-      } catch { setSummary({ ...MOCK_SESSION[summaryStyle] }); setState("result"); }
+        const sumRes = await fetch("/api/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: dataUrl.split(",")[1], mimeType: file.type, style: summaryStyle }),
+        });
+        if (!sumRes.ok) throw new Error(`summarize: ${sumRes.status}`);
+        setSummary(await sumRes.json());
+        setState("result");
+      } catch { setSummary({ ...MOCK_SESSION }); setState("result"); }
     };
     reader.readAsDataURL(file);
   };
 
   const copyAll = async () => {
-    const text = ["📋 סיכום פגישה טיפולית", "", "עיקרי הפגישה:", summary.main, "", "תמות מרכזיות:", summary.themes, "", "נקודות להמשך:", summary.next].join("\n");
-    try { await navigator.clipboard.writeText(text); setAllCopied(true); setTimeout(() => setAllCopied(false), 2500); } catch { /* silent */ }
+    const plain = (s: string) => s.replace(/\[\[([^\]]+)\]\]/g, "$1");
+    const text = [
+      "📋 סיכום פגישה טיפולית",
+      "",
+      "סיכום פגישה רשמי:",
+      plain(summary.official),
+      "",
+      "תמות מרכזיות שעלו בשיחה:",
+      plain(summary.themes),
+      "",
+      "תובנות ושיפוט מקצועי:",
+      plain(summary.insights),
+      "",
+      "יעדים ומשימות להמשך:",
+      plain(summary.goals),
+    ].join("\n");
+    try { await navigator.clipboard.writeText(text); setAllCopied(true); setTimeout(() => setAllCopied(false), 2500); }
+    catch { /* silent */ }
   };
 
   return (
     <div className="flex flex-col flex-1">
-      <input ref={audioRef} type="file" accept=".mp3,.wav,.m4a,audio/*" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); }} />
+      <input ref={audioRef} type="file" accept=".mp3,.wav,.m4a,audio/*" className="hidden"
+        onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); }} />
       <input ref={imageRef} type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => {
         const f = e.target.files?.[0] ?? null; setFile(f);
         if (f) { const r = new FileReader(); r.onload = (ev) => setPreview(ev.target?.result as string); r.readAsDataURL(f); }
@@ -542,21 +650,46 @@ function SessionFlow({ summaryStyle, onBack }: { summaryStyle: StyleKey; onBack:
         <div className="flex flex-col items-center justify-center flex-1 py-16"><LoadingSpinner label={label} /></div>
       )}
 
-      {/* Result */}
+      {/* Result — 4 boxes */}
       {state === "result" && (
         <div className="flex flex-col gap-4 animate-slide-up">
           <div className="flex items-center gap-2 px-1">
             <span className="text-sage-400 text-xs">{new Date().toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })}</span>
             <div className="flex-1 h-px bg-sage-100" />
           </div>
-          <div className="flex items-center gap-2 px-1">
-            <mark className="patient-mark text-[11px]">מטופל/ת</mark>
-            <span className="text-[11px] text-sage-400">— שמות הוחלפו אוטומטית. לחצי לעריכה.</span>
+
+          {/* Legend */}
+          <div className="flex items-center gap-3 px-1 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <mark className="patient-mark text-[10px]">מטופל/ת</mark>
+              <span className="text-[10px] text-sage-400">שמות מוסתרים</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <mark className="clinical-mark text-[10px]">מונח קליני</mark>
+              <span className="text-[10px] text-sage-400">סמן טיפולי</span>
+            </div>
           </div>
-          <SectionCard title="עיקרי הפגישה"  icon="📋" value={summary.main}   onChange={(v) => setSummary((s) => ({ ...s, main: v }))} />
-          <SectionCard title="תמות מרכזיות"  icon="🔍" value={summary.themes} onChange={(v) => setSummary((s) => ({ ...s, themes: v }))} />
-          <SectionCard title="נקודות להמשך"  icon="📌" value={summary.next}   onChange={(v) => setSummary((s) => ({ ...s, next: v }))} />
-          <div className="flex items-center justify-center gap-1.5 py-1"><ShieldIcon /><p className="text-[11px] text-sage-400">המידע לא נשמר — יימחק בלחיצה על "מחק וסגור"</p></div>
+
+          <SectionCard
+            title="סיכום פגישה רשמי (להעתקה לטיפולוג)" icon="📋"
+            value={summary.official}
+            onChange={(v) => setSummary((s) => ({ ...s, official: v }))} />
+          <SectionCard
+            title="תמות מרכזיות שעלו בשיחה" icon="🔍"
+            value={summary.themes}
+            onChange={(v) => setSummary((s) => ({ ...s, themes: v }))} />
+          <SectionCard
+            title="תובנות ושיפוט מקצועי" icon="💡"
+            value={summary.insights}
+            onChange={(v) => setSummary((s) => ({ ...s, insights: v }))} />
+          <SectionCard
+            title="יעדים ומשימות להמשך" icon="📌"
+            value={summary.goals}
+            onChange={(v) => setSummary((s) => ({ ...s, goals: v }))} />
+
+          <div className="flex items-center justify-center gap-1.5 py-1">
+            <ShieldIcon /><p className="text-[11px] text-sage-400">המידע לא נשמר — יימחק בלחיצה על "מחק וסגור"</p>
+          </div>
           <ActionRow onCopyAll={copyAll} allCopied={allCopied} onReset={reset} />
         </div>
       )}
@@ -567,11 +700,11 @@ function SessionFlow({ summaryStyle, onBack }: { summaryStyle: StyleKey; onBack:
           {state === "idle" && (
             <div className="flex gap-2 bg-sage-50 rounded-2xl p-1 w-full max-w-[300px]">
               {([
-                { key: "mic" as InputMode,   label: "הקלטה",   icon: <MicIcon className="w-4 h-4" /> },
+                { key: "mic"   as InputMode, label: "הקלטה",    icon: <MicIcon className="w-4 h-4" /> },
                 { key: "audio" as InputMode, label: "קובץ שמע", icon: <AudioFileIcon /> },
                 { key: "image" as InputMode, label: "תמונה",    icon: <CameraIcon /> },
               ]).map((tab) => (
-                <button key={tab.key} onClick={() => { setMode(tab.key); setFile(null); setPreview(null); }}
+                <button key={tab.key} onClick={() => { setMode(tab.key); setFile(null); setPreview(null); setMicError(""); }}
                   className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-medium transition-all duration-200
                     ${inputMode === tab.key ? "bg-white text-sage-700 shadow-sm" : "text-sage-400 hover:text-sage-600"}`}>
                   {tab.icon}{tab.label}
@@ -583,16 +716,22 @@ function SessionFlow({ summaryStyle, onBack }: { summaryStyle: StyleKey; onBack:
           {/* Mic */}
           {inputMode === "mic" && (
             <>
-              <p className="text-sage-500 text-sm text-center max-w-[220px] leading-relaxed">
+              <p className="text-sage-500 text-sm text-center max-w-[240px] leading-relaxed">
                 {state === "idle" ? "לחצי על המיקרופון להתחלת הקלטה" : "ההקלטה פעילה — לחצי שוב לעצירה"}
               </p>
+              {micError && (
+                <p className="text-red-400 text-xs text-center max-w-[260px] bg-red-50 border border-red-200 rounded-xl px-3 py-2">{micError}</p>
+              )}
               <div className="relative">
                 {state === "recording" && (
-                  <><span className="absolute inset-0 rounded-full bg-sage-300 opacity-30 animate-ping" /><span className="absolute -inset-3 rounded-full bg-sage-200 opacity-20 animate-ping" style={{ animationDelay: "0.3s" }} /></>
+                  <><span className="absolute inset-0 rounded-full bg-red-300 opacity-30 animate-ping" />
+                  <span className="absolute -inset-3 rounded-full bg-red-200 opacity-20 animate-ping" style={{ animationDelay: "0.3s" }} /></>
                 )}
                 <button onClick={handleMic}
                   className={`relative w-28 h-28 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 active:scale-95
-                    ${state === "idle" ? "bg-gradient-to-br from-sage-500 to-sage-600 text-white shadow-sage-300/50" : "bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-red-200/60 animate-pulse-ring"}`}>
+                    ${state === "idle"
+                      ? "bg-gradient-to-br from-sage-500 to-sage-600 text-white shadow-sage-300/50 hover:from-sage-400 hover:to-sage-500"
+                      : "bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-red-200/60"}`}>
                   {state === "idle" ? <MicIcon className="w-12 h-12" /> : <StopIcon className="w-10 h-10" />}
                 </button>
               </div>
@@ -609,7 +748,7 @@ function SessionFlow({ summaryStyle, onBack }: { summaryStyle: StyleKey; onBack:
           {/* Audio file */}
           {inputMode === "audio" && state === "idle" && (
             <div className="flex flex-col items-center gap-5 w-full max-w-[300px]">
-              <p className="text-sage-500 text-sm text-center leading-relaxed">העלי קובץ הקלטה לעיבוד ותמלול אוטומטי</p>
+              <p className="text-sage-500 text-sm text-center leading-relaxed">העלי קובץ הקלטה לתמלול ועיבוד אוטומטי</p>
               {file ? (
                 <><FilePill name={file.name} onRemove={() => { setFile(null); if (audioRef.current) audioRef.current.value = ""; }} />
                 <button onClick={processAudio} className="w-full py-4 rounded-2xl bg-sage-500 text-white font-semibold text-sm shadow-md shadow-sage-200/60 hover:bg-sage-600 active:scale-[0.98] transition-all duration-200">עבד קובץ שמע ←</button></>
@@ -627,7 +766,8 @@ function SessionFlow({ summaryStyle, onBack }: { summaryStyle: StyleKey; onBack:
                 <><div className="relative w-full rounded-2xl overflow-hidden border border-sage-100 shadow-sm">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={imgPreview} alt="תצוגה מקדימה" className="w-full object-cover max-h-44" />
-                  <button onClick={() => { setFile(null); setPreview(null); if (imageRef.current) imageRef.current.value = ""; }} className="absolute top-2 left-2 w-7 h-7 rounded-full bg-black/40 flex items-center justify-center text-white"><XIcon small /></button>
+                  <button onClick={() => { setFile(null); setPreview(null); if (imageRef.current) imageRef.current.value = ""; }}
+                    className="absolute top-2 left-2 w-7 h-7 rounded-full bg-black/40 flex items-center justify-center text-white"><XIcon small /></button>
                 </div>
                 <button onClick={processImage} className="w-full py-4 rounded-2xl bg-sage-500 text-white font-semibold text-sm shadow-md shadow-sage-200/60 hover:bg-sage-600 active:scale-[0.98] transition-all duration-200">קרא הערות וסכם ←</button></>
               ) : (
@@ -842,7 +982,8 @@ export default function HomePage() {
 
   useEffect(() => {
     const style = localStorage.getItem("summaryStyle") as StyleKey | null;
-    if (style && MOCK_SESSION[style]) setSummaryStyle(style);
+    const VALID_STYLES: StyleKey[] = ["short", "clinical", "thematic"];
+    if (style && VALID_STYLES.includes(style)) setSummaryStyle(style);
     setTherapistName(localStorage.getItem("therapistName") || "");
     if (sessionStorage.getItem("unlocked") === "1") setUnlocked(true);
     // Check if API key is configured on the server

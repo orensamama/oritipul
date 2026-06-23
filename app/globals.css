@@ -31,10 +31,20 @@ textarea {
 ::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-thumb  { background: #c5d7c5; border-radius: 2px; }
 
-/* Patient term highlight (marker effect) */
+/* Patient anonymization marker — yellow */
 mark.patient-mark {
   background: #fef08a;
   color: #713f12;
+  border-radius: 3px;
+  padding: 1px 3px;
+  font-weight: 600;
+  font-style: normal;
+}
+
+/* Clinical/diagnostic term marker — amber/orange */
+mark.clinical-mark {
+  background: #fed7aa;
+  color: #9a3412;
   border-radius: 3px;
   padding: 1px 3px;
   font-weight: 600;
