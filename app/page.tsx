@@ -838,12 +838,18 @@ export default function HomePage() {
   const [summaryStyle, setSummaryStyle]   = useState<StyleKey>("clinical");
   const [therapistName, setTherapistName] = useState("");
   const [settingsOpen, setSettingsOpen]   = useState(false);
+  const [isDemo, setIsDemo]               = useState(true);
 
   useEffect(() => {
     const style = localStorage.getItem("summaryStyle") as StyleKey | null;
     if (style && MOCK_SESSION[style]) setSummaryStyle(style);
     setTherapistName(localStorage.getItem("therapistName") || "");
     if (sessionStorage.getItem("unlocked") === "1") setUnlocked(true);
+    // Check if API key is configured on the server
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((data) => setIsDemo(data.demo))
+      .catch(() => setIsDemo(true));
   }, []);
 
   const handleUnlock      = () => { sessionStorage.setItem("unlocked", "1"); setUnlocked(true); };
@@ -893,9 +899,15 @@ export default function HomePage() {
 
         {/* ── Badges ───────────────────────────────────────────────────── */}
         <div className="flex items-center justify-center gap-2 mb-4 flex-wrap">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-warm-100 border border-warm-200 text-warm-700 text-[10px] font-medium tracking-wide">
-            <span className="w-1.5 h-1.5 rounded-full bg-warm-400 animate-pulse" />מצב הדגמה
-          </span>
+          {isDemo ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-warm-100 border border-warm-200 text-warm-700 text-[10px] font-medium tracking-wide">
+              <span className="w-1.5 h-1.5 rounded-full bg-warm-400 animate-pulse" />מצב הדגמה — נתונים מדומים
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-100 border border-sage-300 text-sage-700 text-[10px] font-medium tracking-wide">
+              <span className="w-1.5 h-1.5 rounded-full bg-sage-500" />מחובר ל-AI
+            </span>
+          )}
           {screen !== "dashboard" && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-50 border border-sage-200 text-sage-600 text-[10px] font-medium">
               {activeStyle.icon} {activeStyle.label}
