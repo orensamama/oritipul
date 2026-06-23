@@ -30,3 +30,13 @@ textarea {
 ::-webkit-scrollbar        { width: 4px; }
 ::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-thumb  { background: #c5d7c5; border-radius: 2px; }
+
+/* Patient term highlight (marker effect) */
+mark.patient-mark {
+  background: #fef08a;
+  color: #713f12;
+  border-radius: 3px;
+  padding: 1px 3px;
+  font-weight: 600;
+  font-style: normal;
+}
