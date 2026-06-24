@@ -344,12 +344,33 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   );
 }
 
+// ─── Therapeutic approaches ────────────────────────────────────────────────────
+const APPROACH_OPTIONS = [
+  { key: "cbt",        label: "CBT קלאסי (קוגניטיבי התנהגותי)" },
+  { key: "act",        label: "ACT (טיפול בקבלה ומחויבות)" },
+  { key: "dbt",        label: "DBT (טיפול דיאלקטי התנהגותי)" },
+  { key: "mindful",    label: "מיינדפולנס וקשב קשוב" },
+  { key: "psychodyn",  label: "פסיכודינמית / התייחסותית" },
+  { key: "eft",        label: "EFT (טיפול ממוקד רגש)" },
+  { key: "systemic",   label: "הגישה המערכתית / משפחתית (הדרכת הורים)" },
+  { key: "attachment", label: "טיפול מבוסס התקשרות (Attachment)" },
+  { key: "play",       label: "טיפול במשחק / הבעה ויצירה (מותאם לילדים)" },
+] as const;
+
 // ─── Settings drawer ──────────────────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, selected, onSelect, therapistName, onNameChange }: {
+function SettingsDrawer({ open, onClose, selected, onSelect, therapistName, onNameChange,
+  approaches, onApproachesChange, otherApproach, onOtherApproachChange }: {
   open: boolean; onClose: () => void;
   selected: StyleKey; onSelect: (k: StyleKey) => void;
   therapistName: string; onNameChange: (n: string) => void;
+  approaches: string[]; onApproachesChange: (a: string[]) => void;
+  otherApproach: string; onOtherApproachChange: (v: string) => void;
 }) {
+  const toggleApproach = (key: string) => {
+    onApproachesChange(
+      approaches.includes(key) ? approaches.filter((k) => k !== key) : [...approaches, key]
+    );
+  };
   return (
     <>
       <div className={`fixed inset-0 bg-black/30 backdrop-blur-[2px] z-40 transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`} onClick={onClose} />
@@ -389,6 +410,57 @@ function SettingsDrawer({ open, onClose, selected, onSelect, therapistName, onNa
               })}
             </div>
           </div>
+          {/* ── Therapeutic approaches ── */}
+          <div>
+            <p className="text-xs text-sage-500 font-semibold tracking-wider uppercase mb-1">גישות טיפוליות דומיננטיות</p>
+            <p className="text-[11px] text-sage-400 mb-3">הגישות יוזרקו לפרומפט ה-AI לסיכומים מותאמים אישית</p>
+            <div className="flex flex-col gap-1.5">
+              {APPROACH_OPTIONS.map((opt) => {
+                const checked = approaches.includes(opt.key);
+                return (
+                  <button key={opt.key} onClick={() => toggleApproach(opt.key)}
+                    className={`flex items-center gap-3 w-full text-right px-3 py-2.5 rounded-xl border transition-all duration-150 active:scale-[0.98]
+                      ${checked ? "bg-sage-50 border-sage-300" : "bg-white/70 border-sage-100 hover:border-sage-200"}`}>
+                    <div className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-colors
+                      ${checked ? "bg-sage-500 border-sage-500" : "border-sage-200 bg-white"}`}>
+                      {checked && (
+                        <svg viewBox="0 0 10 8" className="w-3 h-3 fill-white"><path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      )}
+                    </div>
+                    <span className={`text-xs leading-snug ${checked ? "text-sage-800 font-medium" : "text-sage-500"}`}>{opt.label}</span>
+                  </button>
+                );
+              })}
+
+              {/* Other — free text */}
+              <div className={`flex items-start gap-3 w-full px-3 py-2.5 rounded-xl border transition-all duration-150
+                ${otherApproach.trim() ? "bg-sage-50 border-sage-300" : "bg-white/70 border-sage-100"}`}>
+                <div className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center mt-0.5 transition-colors
+                  ${otherApproach.trim() ? "bg-sage-500 border-sage-500" : "border-sage-200 bg-white"}`}>
+                  {otherApproach.trim() && (
+                    <svg viewBox="0 0 10 8" className="w-3 h-3 fill-white"><path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  )}
+                </div>
+                <div className="flex-1 flex flex-col gap-1">
+                  <span className="text-xs text-sage-500 font-medium">אחר:</span>
+                  <input
+                    type="text"
+                    placeholder="הקלידי גישות נוספות..."
+                    value={otherApproach}
+                    onChange={(e) => onOtherApproachChange(e.target.value)}
+                    className="bg-transparent outline-none text-xs text-sage-800 placeholder:text-sage-300 w-full"
+                    dir="rtl"
+                  />
+                </div>
+              </div>
+            </div>
+            {approaches.length > 0 && (
+              <p className="text-[10px] text-sage-400 mt-2 px-1">
+                {approaches.length} גישות נבחרו{otherApproach.trim() ? " + תוספת חופשית" : ""}
+              </p>
+            )}
+          </div>
+
           <div className="bg-sage-50/80 rounded-2xl border border-sage-100 p-4">
             <div className="flex items-center gap-2 mb-2"><ShieldIcon /><p className="text-xs font-semibold text-sage-700">פרטיות מלאה</p></div>
             <p className="text-[11px] text-sage-500 leading-relaxed">המידע לא נשמר בשום שרת או ענן. הכל מתבצע על המכשיר שלך בלבד ונמחק בלחיצה על "מחק וסגור".</p>
@@ -976,15 +1048,22 @@ export default function HomePage() {
   const [unlocked, setUnlocked]           = useState(false);
   const [screen, setScreen]               = useState<AppScreen>("dashboard");
   const [summaryStyle, setSummaryStyle]   = useState<StyleKey>("clinical");
-  const [therapistName, setTherapistName] = useState("");
-  const [settingsOpen, setSettingsOpen]   = useState(false);
-  const [isDemo, setIsDemo]               = useState(true);
+  const [therapistName, setTherapistName]       = useState("");
+  const [settingsOpen, setSettingsOpen]         = useState(false);
+  const [isDemo, setIsDemo]                     = useState(true);
+  const [approaches, setApproaches]             = useState<string[]>([]);
+  const [otherApproach, setOtherApproach]       = useState("");
 
   useEffect(() => {
     const style = localStorage.getItem("summaryStyle") as StyleKey | null;
     const VALID_STYLES: StyleKey[] = ["short", "clinical", "thematic"];
     if (style && VALID_STYLES.includes(style)) setSummaryStyle(style);
     setTherapistName(localStorage.getItem("therapistName") || "");
+    try {
+      const saved = localStorage.getItem("therapistApproaches");
+      if (saved) setApproaches(JSON.parse(saved));
+    } catch { /* ignore */ }
+    setOtherApproach(localStorage.getItem("therapistOtherApproach") || "");
     if (sessionStorage.getItem("unlocked") === "1") setUnlocked(true);
     // Check if API key is configured on the server
     fetch("/api/status")
@@ -996,6 +1075,8 @@ export default function HomePage() {
   const handleUnlock      = () => { sessionStorage.setItem("unlocked", "1"); setUnlocked(true); };
   const handleStyleSelect = (key: StyleKey) => { setSummaryStyle(key); localStorage.setItem("summaryStyle", key); };
   const handleNameChange  = (name: string) => { setTherapistName(name); localStorage.setItem("therapistName", name); };
+  const handleApproachesChange = (a: string[]) => { setApproaches(a); localStorage.setItem("therapistApproaches", JSON.stringify(a)); };
+  const handleOtherApproachChange = (v: string) => { setOtherApproach(v); localStorage.setItem("therapistOtherApproach", v); };
 
   const displayTitle = therapistName.trim() ? `חדר הטיפולים של ${therapistName.trim()}` : "חדר הטיפולים";
 
@@ -1014,6 +1095,8 @@ export default function HomePage() {
         open={settingsOpen} onClose={() => setSettingsOpen(false)}
         selected={summaryStyle} onSelect={handleStyleSelect}
         therapistName={therapistName} onNameChange={handleNameChange}
+        approaches={approaches} onApproachesChange={handleApproachesChange}
+        otherApproach={otherApproach} onOtherApproachChange={handleOtherApproachChange}
       />
 
       <main className="min-h-dvh flex flex-col max-w-md mx-auto px-4 pb-8">
