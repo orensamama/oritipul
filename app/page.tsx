@@ -1157,7 +1157,7 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
   return (
     <div className="flex flex-col flex-1">
       <input ref={audioRef} type="file" accept=".mp3,.wav,.m4a,audio/*" className="hidden"
-        onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); }} />
+        onChange={(e) => { setFile(e.target.files?.[0] ?? null); }} />
       <input ref={imageRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={(e) => {
         const files = Array.from(e.target.files ?? []);
         if (!files.length) return;
@@ -1305,7 +1305,7 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
                 { key: "audio" as InputMode, label: "קובץ שמע", icon: <AudioFileIcon /> },
                 { key: "image" as InputMode, label: "תמונה",    icon: <CameraIcon /> },
               ]).map((tab) => (
-                <button key={tab.key} onClick={() => { setMode(tab.key); setFile(null); setPreview(null); setMicError(""); }}
+                <button key={tab.key} onClick={() => { setMode(tab.key); setFile(null); setImageFiles([]); setMicError(""); }}
                   className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-medium transition-all duration-200
                     ${inputMode === tab.key ? "bg-white text-sage-700 shadow-sm" : "text-sage-400 hover:text-sage-600"}`}>
                   {tab.icon}{tab.label}
