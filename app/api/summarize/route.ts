@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
       text?: string;
       imageBase64?: string;
       mimeType?: string;
+      images?: { base64: string; mimeType: string }[];
       style?: string;
     };
 
@@ -80,15 +81,33 @@ export async function POST(req: NextRequest) {
 
     const userContent: object[] = [];
 
-    if (body.imageBase64) {
+    // Multiple images (multi-page notebook scan)
+    if (body.images && Array.isArray(body.images) && body.images.length > 0) {
+      const pageWord = body.images.length === 1 ? "דף" : `${body.images.length} דפים`;
       userContent.push({
         type: "text",
-        text: `קרא את הכתוב בתמונה זו (הערות מחברת טיפולית) וסכם לפי ההנחיות. ${styleNote}`,
+        text: `הכתוב בתמונות הבאות הוא טקסט עברי מימין לשמאל — כולל כתב יד. קרא בעיון כל ${pageWord} של מחברת טיפולית וסכם את כולם יחד כמסמך אחד. ${styleNote}`,
+      });
+      for (const img of body.images as { base64: string; mimeType: string }[]) {
+        userContent.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${img.mimeType ?? "image/jpeg"};base64,${img.base64}`,
+            detail: "high",
+          },
+        });
+      }
+    // Single legacy image
+    } else if (body.imageBase64) {
+      userContent.push({
+        type: "text",
+        text: `הכתוב בתמונה הוא טקסט עברי מימין לשמאל — כולל כתב יד. קרא בעיון את הערות המחברת הטיפולית וסכם לפי ההנחיות. ${styleNote}`,
       });
       userContent.push({
         type: "image_url",
         image_url: {
           url: `data:${body.mimeType ?? "image/jpeg"};base64,${body.imageBase64}`,
+          detail: "high",
         },
       });
     } else {
