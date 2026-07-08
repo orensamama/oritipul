@@ -10,7 +10,7 @@ const VALID_PASSWORD = "0547454546";
 type StyleKey    = "short" | "clinical" | "thematic";
 type AppScreen   = "dashboard" | "session" | "report" | "history";
 type ImageFile   = { id: string; file: File; preview: string };
-type SessionState = "idle" | "recording" | "paused" | "stopped" | "loading" | "result";
+type SessionState = "idle" | "recording" | "paused" | "stopped" | "loading" | "result" | "error";
 type InputMode   = "mic" | "audio" | "image";
 type ReportStep  = "upload" | "updates" | "loading" | "result";
 
@@ -797,6 +797,10 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
   const audioChunksRef   = useRef<Blob[]>([]);
   const streamRef        = useRef<MediaStream | null>(null);
   const mimeTypeRef      = useRef<string>("audio/webm");
+  const audioBlobRef     = useRef<Blob | null>(null);       // saved blob for retry
+  const audioBlobUrlRef  = useRef<string | null>(null);     // object URL for cleanup
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
 
   // ── Personal notes state ──────────────────────────────────────────────────
   const [noteState, setNoteState]         = useState<"idle" | "recording" | "loading" | "done">("idle");
@@ -871,6 +875,9 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
 
   const reset = useCallback(() => {
     cleanupMain(); cleanupNotes();
+    if (audioBlobUrlRef.current) { URL.revokeObjectURL(audioBlobUrlRef.current); audioBlobUrlRef.current = null; }
+    audioBlobRef.current = null;
+    setAudioUrl(null); setErrorMsg("");
     setSummary({ official: "", themes: "", insights: "", goals: "" });
     setPersonalNotes(""); setFile(null); setImageFiles([]);
     setMicError(""); setNoteMicError("");
@@ -933,22 +940,33 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
     }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null; mediaRecorderRef.current = null;
+
+    // Snapshot current chunks into a playable blob for the audio player
+    const mimeType = mimeTypeRef.current || "audio/webm";
+    const blob = new Blob(audioChunksRef.current, { type: mimeType });
+    audioBlobRef.current = blob;
+    if (audioBlobUrlRef.current) URL.revokeObjectURL(audioBlobUrlRef.current);
+    const url = URL.createObjectURL(blob);
+    audioBlobUrlRef.current = url;
+    setAudioUrl(url);
+
     setState("stopped");
   };
 
   const sendToAI = async () => {
-    if (audioChunksRef.current.length === 0) return;
+    // Use saved blob (set by stopRecording) — supports retry without re-recording
+    const blob = audioBlobRef.current;
+    if (!blob) return;
+
     const mimeType = mimeTypeRef.current || "audio/webm";
     const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
-    const blob = new Blob(audioChunksRef.current, { type: mimeType });
-    audioChunksRef.current = []; // free memory immediately
 
-    setLabel("מתמלל הקלטה…"); setState("loading");
+    setLabel("מתמלל הקלטה…"); setState("loading"); setErrorMsg("");
     try {
       const form = new FormData();
       form.append("file", blob, `recording.${ext}`);
       const trRes = await fetch("/api/transcribe", { method: "POST", body: form });
-      if (!trRes.ok) throw new Error(`transcribe: ${trRes.status}`);
+      if (!trRes.ok) throw new Error(`שגיאת תמלול (${trRes.status})`);
       const { text } = await trRes.json();
 
       setLabel("מסכם פגישה…");
@@ -957,10 +975,20 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, style: summaryStyle }),
       });
-      if (!sumRes.ok) throw new Error(`summarize: ${sumRes.status}`);
+      if (!sumRes.ok) throw new Error(`שגיאת סיכום (${sumRes.status})`);
       const result = await sumRes.json();
+      // Free chunks now that we have a successful result
+      audioChunksRef.current = [];
       setSummary(result); saveResult(result); setState("result");
-    } catch { setSummary({ ...MOCK_SESSION }); saveResult(MOCK_SESSION); setState("result"); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setErrorMsg(
+        msg.includes("504") || msg.includes("timeout")
+          ? "פסק זמן — ההקלטה ארוכה מדי. נסי שוב או פצלי לשניים."
+          : `שגיאה בעיבוד: ${msg || "בעיית רשת"}. ניתן לנסות שוב.`
+      );
+      setState("error");
+    }
   };
 
   // ── Personal notes recorder ───────────────────────────────────────────────
@@ -1293,8 +1321,8 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
         </div>
       )}
 
-      {/* ── Idle / Recording / Paused / Stopped ── */}
-      {(state === "idle" || state === "recording" || state === "paused" || state === "stopped") && (
+      {/* ── Idle / Recording / Paused / Stopped / Error ── */}
+      {(state === "idle" || state === "recording" || state === "paused" || state === "stopped" || state === "error") && (
         <div className="flex flex-col items-center flex-1 gap-6 py-4">
 
           {/* Input mode tabs — idle only */}
@@ -1378,6 +1406,14 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
 
               {state === "stopped" && (
                 <div className="flex flex-col gap-2.5 w-full">
+                  {/* Audio player — verify recording before sending */}
+                  {audioUrl && (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[11px] text-sage-400 text-center">האזיני לפני שליחה</p>
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <audio controls src={audioUrl} className="w-full rounded-xl" />
+                    </div>
+                  )}
                   <button onClick={sendToAI}
                     className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-sage-500 text-white font-semibold text-sm shadow-md shadow-sage-200/60 hover:bg-sage-600 transition-all active:scale-[0.98]">
                     🪄 שלח ל-AI לסיכום
@@ -1388,6 +1424,31 @@ function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }:
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Error state ── */}
+          {state === "error" && (
+            <div className="flex flex-col items-center gap-4 w-full max-w-[300px]">
+              <div className="w-16 h-16 rounded-full bg-red-50 border border-red-200 flex items-center justify-center text-red-400">
+                <XIcon />
+              </div>
+              <p className="text-red-500 text-sm text-center leading-relaxed px-2">{errorMsg}</p>
+              {audioUrl && (
+                <div className="w-full flex flex-col gap-1">
+                  <p className="text-[11px] text-sage-400 text-center">ניתן להאזין לפני שליחה חוזרת</p>
+                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                  <audio controls src={audioUrl} className="w-full rounded-xl" />
+                </div>
+              )}
+              <button onClick={sendToAI}
+                className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-sage-500 text-white font-semibold text-sm shadow-md shadow-sage-200/60 hover:bg-sage-600 transition-all active:scale-[0.98]">
+                🔄 נסה לעבד שוב
+              </button>
+              <button onClick={reset}
+                className="text-sm text-sage-400 hover:text-sage-600 transition-colors py-1">
+                מחק והתחל מחדש
+              </button>
             </div>
           )}
 
