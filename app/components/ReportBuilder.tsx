@@ -10,8 +10,42 @@ import {
 import { LoadingSpinner, SectionCard, FilePill, ActionRow } from "./shared";
 
 const PATIENT_TOKEN = "[מטופל/ת]";
+const MAX_PDF_BYTES = 8 * 1024 * 1024; // 8MB — matches the server-side guard
 
 type BuilderStep = "form" | "loading" | "result";
+
+// Phone-camera photos are routinely 5-10MB; downscaling + re-compressing
+// client-side keeps the request well under serverless payload limits and
+// speeds up the round-trip, without touching accuracy for a document scan.
+async function compressImageToBase64(file: File, maxDim = 1600, quality = 0.82): Promise<{ base64: string; mime: string }> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error("file read failed"));
+    r.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("image decode failed"));
+    im.src = dataUrl;
+  });
+
+  let { width, height } = img;
+  if (width > maxDim || height > maxDim) {
+    const scale = maxDim / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { base64: dataUrl.split(",")[1], mime: file.type || "image/jpeg" };
+  ctx.drawImage(img, 0, 0, width, height);
+  const outDataUrl = canvas.toDataURL("image/jpeg", quality);
+  return { base64: outDataUrl.split(",")[1], mime: "image/jpeg" };
+}
 
 export default function ReportBuilder() {
   const [stepState, setStepState] = useState<BuilderStep>("form");
@@ -27,7 +61,6 @@ export default function ReportBuilder() {
 
   // ── (b) sample document — deleted from memory right after structure extraction ──
   const [sampleName, setSampleName] = useState<string | null>(null);
-  const [samplePreview, setSamplePreview] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
   const [structure, setStructure] = useState<unknown | null>(null);
@@ -88,40 +121,62 @@ export default function ReportBuilder() {
 
   // ── sample upload → extract structure → immediately discard the file ───
   const handleSampleFile = async (f: File) => {
-    setExtractError(""); setSampleName(f.name); setExtracting(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const base64 = dataUrl.split(",")[1];
-      setSamplePreview(dataUrl);
-      try {
-        const res = await fetch("/api/report-builder/extract-structure", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sampleBase64: base64, sampleMime: f.type, reportType }),
+    setExtractError(""); setSampleName(f.name); setStructure(null); setStructureLabel("");
+
+    const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+    if (isPdf && f.size > MAX_PDF_BYTES) {
+      setExtractError(
+        `קובץ ה-PDF גדול מדי (כ-${Math.round(f.size / (1024 * 1024))}MB). נא להעלות קובץ עד 8MB, או להעלות אותו כתמונה/סריקה במקום.`
+      );
+      if (sampleInputRef.current) sampleInputRef.current.value = "";
+      return;
+    }
+
+    setExtracting(true);
+    try {
+      let base64: string; let mime: string;
+      if (isPdf) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = () => reject(new Error("file read failed"));
+          r.readAsDataURL(f);
         });
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        setStructure(data.structure);
-        const secs = (data.structure?.sections as { heading: string }[] | undefined) ?? [];
-        setStructureLabel(
-          secs.length ? `${secs.length} סעיפים זוהו: ${secs.map((s) => s.heading).join(" • ")}` : "מבנה זוהה בהצלחה"
-        );
-      } catch {
-        setExtractError("שגיאה בזיהוי מבנה הדוגמה. ניתן לנסות שוב או להמשיך ללא תבנית.");
-      } finally {
-        // Privacy: the sample file's content is discarded from memory the instant
-        // structure extraction finishes — only the filename label remains for display.
-        setSamplePreview(null);
-        setExtracting(false);
-        if (sampleInputRef.current) sampleInputRef.current.value = "";
+        base64 = dataUrl.split(",")[1]; mime = f.type || "application/pdf";
+      } else {
+        const compressed = await compressImageToBase64(f);
+        base64 = compressed.base64; mime = compressed.mime;
       }
-    };
-    reader.readAsDataURL(f);
+
+      const res = await fetch("/api/report-builder/extract-structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleBase64: base64, sampleMime: mime, sampleName: f.name, reportType }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.message || "שגיאה בזיהוי מבנה הדוגמה. ניתן לנסות שוב או להמשיך ללא תבנית.");
+      }
+
+      const data = await res.json();
+      setStructure(data.structure);
+      const secs = (data.structure?.sections as { heading: string }[] | undefined) ?? [];
+      setStructureLabel(
+        secs.length ? `${secs.length} סעיפים זוהו: ${secs.map((s) => s.heading).join(" • ")}` : "מבנה זוהה בהצלחה"
+      );
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : "שגיאה בזיהוי מבנה הדוגמה. ניתן לנסות שוב או להמשיך ללא תבנית.");
+    } finally {
+      // Privacy: the sample file's content is discarded from memory the instant
+      // structure extraction finishes (or fails) — only the filename label remains.
+      setExtracting(false);
+      if (sampleInputRef.current) sampleInputRef.current.value = "";
+    }
   };
 
   const removeSample = () => {
-    setSampleName(null); setSamplePreview(null); setStructure(null); setStructureLabel(""); setExtractError("");
+    setSampleName(null); setStructure(null); setStructureLabel(""); setExtractError("");
     if (sampleInputRef.current) sampleInputRef.current.value = "";
   };
 
