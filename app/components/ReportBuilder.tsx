@@ -70,6 +70,14 @@ export default function ReportBuilder() {
   // ── (c) guidelines + current session content ───────────────────────────
   const [guidelines, setGuidelines] = useState("");
   const [content, setContent] = useState("");
+  const [contentRecording, setContentRecording] = useState(false);
+  const [contentTranscribing, setContentTranscribing] = useState(false);
+  const contentStreamRef = useRef<MediaStream | null>(null);
+  const contentRecorderRef = useRef<MediaRecorder | null>(null);
+  const contentChunksRef = useRef<Blob[]>([]);
+  const [contentExtracting, setContentExtracting] = useState(false);
+  const [contentFileError, setContentFileError] = useState("");
+  const contentFileInputRef = useRef<HTMLInputElement>(null);
 
   // ── result ───────────────────────────────────────────────────────────
   const [sections, setSections] = useState<ReportSection[]>([]);
@@ -117,6 +125,94 @@ export default function ReportBuilder() {
       }
     } catch { /* silent — user can still type */ }
     setTypeTranscribing(false);
+  };
+
+  // ── record current-patient content (themes, extension reason, session notes) ──
+  const startContentRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      contentStreamRef.current = stream; contentChunksRef.current = [];
+      const mimeType = getBestMimeType();
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mr.ondataavailable = (e) => { if (e.data?.size > 0) contentChunksRef.current.push(e.data); };
+      mr.start(250); contentRecorderRef.current = mr; setContentRecording(true);
+    } catch { /* mic unavailable — user can type instead */ }
+  };
+
+  const stopContentRecording = async () => {
+    const mr = contentRecorderRef.current;
+    if (!mr || mr.state === "inactive") return;
+    await new Promise<void>((resolve) => { mr.onstop = () => resolve(); mr.stop(); });
+    contentStreamRef.current?.getTracks().forEach((t) => t.stop());
+    contentStreamRef.current = null; contentRecorderRef.current = null;
+    setContentRecording(false);
+
+    const mimeType = getBestMimeType() || "audio/webm";
+    const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
+    const blob = new Blob(contentChunksRef.current, { type: mimeType });
+    contentChunksRef.current = [];
+    setContentTranscribing(true);
+    try {
+      const form = new FormData();
+      form.append("file", blob, `content-note.${ext}`);
+      const res = await fetch("/api/transcribe", { method: "POST", body: form });
+      if (res.ok) {
+        const { text } = await res.json();
+        setContent((prev) => (prev ? `${prev}\n${text}` : text));
+      }
+    } catch { /* silent — user can still type */ }
+    setContentTranscribing(false);
+  };
+
+  // ── upload image/PDF of current-patient notes → extract anonymized content ──
+  const handleContentFile = async (f: File) => {
+    setContentFileError("");
+    const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+    if (isPdf && f.size > MAX_PDF_BYTES) {
+      setContentFileError(
+        `קובץ ה-PDF גדול מדי (כ-${Math.round(f.size / (1024 * 1024))}MB). נא להעלות קובץ עד 8MB, או להעלות אותו כתמונה/סריקה במקום.`
+      );
+      if (contentFileInputRef.current) contentFileInputRef.current.value = "";
+      return;
+    }
+
+    setContentExtracting(true);
+    try {
+      let base64: string; let mime: string;
+      if (isPdf) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = () => reject(new Error("file read failed"));
+          r.readAsDataURL(f);
+        });
+        base64 = dataUrl.split(",")[1]; mime = f.type || "application/pdf";
+      } else {
+        const compressed = await compressImageToBase64(f);
+        base64 = compressed.base64; mime = compressed.mime;
+      }
+
+      const res = await fetch("/api/report-builder/extract-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileBase64: base64, fileMime: mime, fileName: f.name }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.message || "שגיאה בחילוץ התוכן מהקובץ. ניתן לנסות שוב.");
+      }
+
+      const data = await res.json();
+      if (data.text) setContent((prev) => (prev ? `${prev}\n\n${data.text}` : data.text));
+    } catch (err) {
+      setContentFileError(err instanceof Error ? err.message : "שגיאה בחילוץ התוכן מהקובץ. ניתן לנסות שוב.");
+    } finally {
+      // Privacy: the uploaded file's content is discarded from memory the instant
+      // extraction finishes (or fails) — only its extracted, anonymized text remains.
+      setContentExtracting(false);
+      if (contentFileInputRef.current) contentFileInputRef.current.value = "";
+    }
   };
 
   // ── sample upload → extract structure → immediately discard the file ───
@@ -291,6 +387,8 @@ export default function ReportBuilder() {
     <div className="flex flex-col gap-5 py-4 animate-fade-in">
       <input ref={sampleInputRef} type="file" accept="image/*,.pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSampleFile(f); }} />
+      <input ref={contentFileInputRef} type="file" accept="image/*,.pdf" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleContentFile(f); }} />
 
       <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-1"><SparkleIcon /><p className="text-xs font-semibold text-purple-800">מחולל דוחות מותאם אישית</p></div>
@@ -354,16 +452,33 @@ export default function ReportBuilder() {
 
       {/* content to weave in */}
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between px-1">
+        <div className="flex items-center justify-between px-1 flex-wrap gap-y-1.5">
           <label className="text-xs font-semibold text-sage-600">תוכן הפגישה / התקופה הנוכחית</label>
-          <button onClick={importLastSession} className="text-[11px] text-sage-500 hover:text-sage-700 underline underline-offset-2">
-            ייבא מסיכום אחרון
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={importLastSession} className="text-[11px] text-sage-500 hover:text-sage-700 underline underline-offset-2">
+              ייבא מסיכום אחרון
+            </button>
+            <button onClick={contentRecording ? stopContentRecording : startContentRecording} disabled={contentTranscribing}
+              title="הקלטה קולית — תמות, סיבת הארכה ופרטי המפגשים"
+              className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-95
+                ${contentRecording ? "bg-red-500 text-white animate-pulse" : "bg-sage-50 text-sage-500 hover:bg-sage-100"}`}>
+              {contentTranscribing ? <div className="w-3 h-3 rounded-full border-2 border-sage-300 border-t-sage-600 animate-spin" />
+                : contentRecording ? <StopIcon className="w-3 h-3" /> : <MicIcon className="w-3.5 h-3.5" />}
+            </button>
+            <button onClick={() => contentFileInputRef.current?.click()} disabled={contentExtracting}
+              title="העלאת תמונה/מסמך של תרשומות המטופל/ת הנוכחי/ת"
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-sage-50 text-sage-500 hover:bg-sage-100 transition-all active:scale-95">
+              {contentExtracting ? <div className="w-3 h-3 rounded-full border-2 border-sage-300 border-t-sage-600 animate-spin" />
+                : <UploadIcon className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
         <textarea
           className="w-full bg-white/80 border border-sage-100 rounded-2xl px-4 py-3 text-sm text-gray-700 leading-relaxed outline-none focus:border-sage-400 transition-colors min-h-[110px] shadow-sm"
-          placeholder="הדביקי כאן תמלול, תמות או סיכום מהפגישה הנוכחית — זה יילקח לכתיבת הדוח"
+          placeholder="הדביקי כאן תמלול, תמות או סיכום מהפגישה הנוכחית — או הקליטי/העלי תמונה באמצעות הכפתורים למעלה"
           value={content} onChange={(e) => setContent(e.target.value)} dir="rtl" />
+        <p className="text-[10px] text-sage-400 px-1">🎙️ הקלטה מתמללת אוטומטית • 📎 תמונה/PDF של תרשומות — התוכן מחולץ ועובר אנונימיזציה אוטומטית, הקובץ עצמו לא נשמר</p>
+        {contentFileError && <p className="text-red-400 text-[11px] px-1">{contentFileError}</p>}
       </div>
 
       {genError && <p className="text-red-400 text-xs text-center bg-red-50 border border-red-200 rounded-xl px-3 py-2">{genError}</p>}

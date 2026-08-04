@@ -4,6 +4,7 @@
     "app/api/summarize/route.ts":  { "maxDuration": 300 },
     "app/api/report/route.ts":     { "maxDuration": 300 },
     "app/api/report-builder/extract-structure/route.ts": { "maxDuration": 300 },
+    "app/api/report-builder/extract-content/route.ts":   { "maxDuration": 300 },
     "app/api/report-builder/generate/route.ts":           { "maxDuration": 300 }
   }
 }

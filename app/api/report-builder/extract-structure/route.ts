@@ -1,18 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractText, getDocumentProxy } from "unpdf";
+import { MAX_DECODED_BYTES, MAX_PDF_TEXT_CHARS, decodedByteLength, detectFileKind, extractPdfText, jsonError } from "../shared";
 
 // ─── Structure-only extraction prompt ─────────────────────────────────────────
 // Privacy: this endpoint must NEVER echo back, log, or persist any patient content
 // from the uploaded sample — only the structural/stylistic shape of the document.
-const SYSTEM_PROMPT = `אתה עוזר AI המתמחה בניתוח מבנה מסמכים קליניים.
-המשימה שלך היא לחלץ אך ורק את המבנה הצורני של המסמך המצורף — לעולם אל תעתיק, תצטט
-או תתייחס לתוכן אישי/קליני/שמות של המטופל/ת המופיעים במסמך.
+const SYSTEM_PROMPT = `אתה עוזר AI המתמחה בניתוח מבנה מסמכים קליניים (Structural Template Extraction).
+
+המשימה שלך היא לחלץ אך ורק את ה"שלד" הצורני הריק של המסמך המצורף — סדר הכותרות, הסגנון
+והאורך של כל סעיף — ולעולם לא תוכן אמיתי מתוכו.
+
+╔══ איסור מוחלט — קרא בעיון ══╗
+לעולם, בשום פנים ואופן, אל תכלול בפלט:
+- שם פרטי או משפחה של מטופל/ת, מטפלת, גורם מפנה, או כל אדם אחר שמופיע במסמך
+- תאריכים ספציפיים, מספרי זהות/תיק, שמות מוסדות/בתי ספר/מרפאות/ארגונים
+- כל משפט, פסקה, ציטוט או תיאור מקרה מהתוכן הקליני עצמו
+- כל פרט המזהה את המטופל/ת באופן ישיר או עקיף
+
+מותר ורצוי לכלול אך ורק כותרות-סעיפים גנריות (labels ריקים), לדוגמה עבור מכתב בקשת
+הארכת טיפול טיפוסי:
+"לכבוד" • "הנידון" • "סיבת ותאריך ההפניה" • "תמות מרכזיות שעוסקים בהם בטיפול" •
+"סיבה לבקשת הארכה" • "בכבוד רב, שם המטפלת וחתימה"
+— אלה כותרות-על גנריות בלבד, לא התוכן שממלא אותן במסמך המקורי.
+
+אם כותרת בפועל במסמך מכילה פרט מזהה (למשל "לכבוד ד״ר כהן, מרפאת X"), הפכי אותה לכותרת
+הגנרית המקבילה בלבד ("לכבוד") — בלי השם או הפרט המזהה.
 
 חלץ:
-- כותרות הסעיפים לפי הסדר המדויק שבו הם מופיעים
+- כותרות הסעיפים בלבד, לפי הסדר המדויק שבו הן מופיעות במסמך (labels גנריים, לא תוכן)
 - טון/סגנון הכתיבה (רשמי, קליני, תמציתי, נרטיבי וכו')
 - אורך משוער לכל סעיף (קצר/בינוני/ארוך)
-- מבנה כללי (פסקאות רציפות / בולטים / טבלה)
 
 פורמט הפלט — JSON בלבד, ללא כל טקסט נוסף:
 {
@@ -22,25 +38,43 @@ const SYSTEM_PROMPT = `אתה עוזר AI המתמחה בניתוח מבנה מ�
 
 const MOCK_STRUCTURE = {
   sections: [
-    { heading: "סיכום תקופתי", styleNote: "פסקה רציפה, לשון קלינית רשמית", lengthHint: "בינוני" },
-    { heading: "התקדמות ביחס ליעדים", styleNote: "בולטים לפי יעד", lengthHint: "בינוני" },
-    { heading: "תמות מרכזיות", styleNote: "בולטים קצרים", lengthHint: "קצר" },
-    { heading: "המלצות להמשך", styleNote: "בולטים ממוקדים", lengthHint: "קצר" },
+    { heading: "לכבוד", styleNote: "פנייה רשמית לגורם מפנה", lengthHint: "קצר" },
+    { heading: "הנידון", styleNote: "שורת נושא קצרה", lengthHint: "קצר" },
+    { heading: "סיבת ותאריך ההפניה", styleNote: "משפט או שניים, לשון רשמית", lengthHint: "קצר" },
+    { heading: "תמות מרכזיות שעוסקים בהם בטיפול", styleNote: "בולטים קצרים", lengthHint: "בינוני" },
+    { heading: "סיבה לבקשת הארכה", styleNote: "פסקה קצרה, לשון קלינית רשמית", lengthHint: "בינוני" },
+    { heading: "בכבוד רב, שם המטפלת וחתימה", styleNote: "סגירה רשמית", lengthHint: "קצר" },
   ],
   toneNote: "קליני רשמי, גוף שלישי",
 };
 
-// Vercel's default serverless request-body ceiling is ~4.5MB; base64 inflates
-// binary size by ~33%, so we cap the decoded file well below that.
-const MAX_DECODED_BYTES = 8 * 1024 * 1024; // 8MB
-const MAX_PDF_TEXT_CHARS = 9000;
+// Defensive backstop: structural headings/notes should always be short generic
+// labels, never full sentences — if the model ever echoes real document
+// content despite the prompt, truncating anomalously long fields limits the
+// blast radius instead of silently forwarding it into the saved template.
+const MAX_HEADING_CHARS = 60;
+const MAX_NOTE_CHARS = 140;
+const MAX_TONE_CHARS = 200;
 
-function jsonError(status: number, error: string, message: string, extra?: Record<string, unknown>) {
-  return NextResponse.json({ error, message, ...extra }, { status });
+function sanitizeStructure(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return { sections: [], toneNote: "" };
+  const obj = raw as Record<string, unknown>;
+  const rawSections = Array.isArray(obj.sections) ? obj.sections : [];
+  const sections = rawSections
+    .map((s) => {
+      const sec = (s ?? {}) as Record<string, unknown>;
+      return {
+        heading: String(sec.heading ?? "").slice(0, MAX_HEADING_CHARS).trim(),
+        styleNote: String(sec.styleNote ?? "").slice(0, MAX_NOTE_CHARS).trim(),
+        lengthHint: String(sec.lengthHint ?? "").slice(0, 20).trim(),
+      };
+    })
+    .filter((s) => s.heading);
+  return { sections, toneNote: String(obj.toneNote ?? "").slice(0, MAX_TONE_CHARS).trim() };
 }
 
 async function callOpenAI(apiKey: string, userContent: unknown) {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  return fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -57,7 +91,6 @@ async function callOpenAI(apiKey: string, userContent: unknown) {
       max_tokens: 800,
     }),
   });
-  return res;
 }
 
 export async function POST(req: NextRequest) {
@@ -80,7 +113,7 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "NO_FILE", "לא סופק קובץ דוגמה.");
   }
 
-  const decodedBytes = Math.floor((body.sampleBase64.length * 3) / 4);
+  const decodedBytes = decodedByteLength(body.sampleBase64);
   if (decodedBytes > MAX_DECODED_BYTES) {
     return jsonError(
       413,
@@ -94,23 +127,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ structure: MOCK_STRUCTURE });
   }
 
-  const isPdf = body.sampleMime === "application/pdf" || /\.pdf$/i.test(body.sampleName ?? "");
-  const isImage = !isPdf && (body.sampleMime?.startsWith("image/") ?? true);
-
-  if (!isPdf && !isImage) {
+  const kind = detectFileKind(body.sampleMime, body.sampleName);
+  if (kind === "unsupported") {
     return jsonError(415, "UNSUPPORTED_TYPE", "סוג קובץ לא נתמך. נא להעלות תמונה (JPG/PNG) או PDF.");
   }
 
   try {
     let userContent: unknown;
 
-    if (isPdf) {
+    if (kind === "pdf") {
       let pdfText = "";
       try {
-        const buffer = Buffer.from(body.sampleBase64, "base64");
-        const pdf = await getDocumentProxy(new Uint8Array(buffer));
-        const { text } = await extractText(pdf, { mergePages: true });
-        pdfText = (text ?? "").trim();
+        pdfText = await extractPdfText(body.sampleBase64);
       } catch (pdfErr) {
         console.error("[report-builder/extract-structure] PDF parsing failed", {
           name: body.sampleName,
@@ -133,6 +161,7 @@ export async function POST(req: NextRequest) {
 
       const instruction = `סוג הדוח המבוקש: ${body.reportType || "לא צוין"}.
 להלן טקסט שחולץ מקובץ PDF לדוגמה. חלץ ממנו אך ורק את המבנה הצורני שלו, כמפורט בהנחיות המערכת.
+זכור: כותרות-סעיפים גנריות בלבד — לעולם לא שמות, תאריכים או תוכן קליני מתוך הטקסט.
 
 ═══ טקסט המסמך ═══
 ${pdfText.slice(0, MAX_PDF_TEXT_CHARS)}
@@ -141,7 +170,8 @@ ${pdfText.slice(0, MAX_PDF_TEXT_CHARS)}
       userContent = instruction;
     } else {
       const instruction = `סוג הדוח המבוקש: ${body.reportType || "לא צוין"}.
-נתח את קובץ הדוגמה המצורף וחלץ ממנו אך ורק את המבנה הצורני שלו, כמפורט בהנחיות המערכת.`;
+נתח את קובץ הדוגמה המצורף וחלץ ממנו אך ורק את המבנה הצורני שלו, כמפורט בהנחיות המערכת.
+זכור: כותרות-סעיפים גנריות בלבד — לעולם לא שמות, תאריכים או תוכן קליני מתוך המסמך.`;
 
       userContent = [
         { type: "text", text: instruction },
@@ -193,7 +223,7 @@ ${pdfText.slice(0, MAX_PDF_TEXT_CHARS)}
       return jsonError(502, "INVALID_JSON", "מנוע ה-AI החזיר פלט לא תקין. נסי שוב.");
     }
 
-    return NextResponse.json({ structure: parsed });
+    return NextResponse.json({ structure: sanitizeStructure(parsed) });
   } catch (err) {
     console.error("[report-builder/extract-structure] unexpected error", {
       name: body.sampleName,
