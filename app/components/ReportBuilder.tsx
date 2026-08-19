@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, type Dispatch, type SetStateAction } from "react";
 import type { ReportSection } from "../lib/types";
 import { loadHistory } from "../lib/storage";
+import { extractAudioFileFromClipboardEvent, readAudioFileFromClipboard, transcribeAudioFile } from "../lib/audio-paste";
 import {
   MicIcon, StopIcon, ShieldIcon, SparkleIcon,
-  CheckIcon, DownloadIcon, UploadIcon,
+  CheckIcon, DownloadIcon, UploadIcon, PasteIcon,
 } from "./icons";
 import { LoadingSpinner, SectionCard, FilePill, ActionRow } from "./shared";
 
@@ -13,6 +14,11 @@ const PATIENT_TOKEN = "[מטופל/ת]";
 const MAX_PDF_BYTES = 8 * 1024 * 1024; // 8MB — matches the server-side guard
 
 type BuilderStep = "form" | "loading" | "result";
+
+function getBestMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+}
 
 // Phone-camera photos are routinely 5-10MB; downscaling + re-compressing
 // client-side keeps the request well under serverless payload limits and
@@ -47,136 +53,68 @@ async function compressImageToBase64(file: File, maxDim = 1600, quality = 0.82):
   return { base64: outDataUrl.split(",")[1], mime: "image/jpeg" };
 }
 
-export default function ReportBuilder() {
-  const [stepState, setStepState] = useState<BuilderStep>("form");
-  const [loadingLabel, setLoadingLabel] = useState("מייצר דוח…");
-
-  // ── (a) report type ────────────────────────────────────────────────────
-  const [reportType, setReportType] = useState("");
-  const [typeRecording, setTypeRecording] = useState(false);
-  const [typeTranscribing, setTypeTranscribing] = useState(false);
-  const typeStreamRef = useRef<MediaStream | null>(null);
-  const typeRecorderRef = useRef<MediaRecorder | null>(null);
-  const typeChunksRef = useRef<Blob[]>([]);
-
-  // ── (b) sample document — deleted from memory right after structure extraction ──
-  const [sampleName, setSampleName] = useState<string | null>(null);
+// ─── Reusable input: free text + voice recording + image/PDF content extraction
+// + clipboard audio paste (event & button) — used for both the current-period
+// content field and the treatment-history field.
+function VoiceFileTextarea({ label, placeholder, value, onChange, hint, extraAction }: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: Dispatch<SetStateAction<string>>;
+  hint?: string;
+  extraAction?: React.ReactNode;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [extracting, setExtracting] = useState(false);
-  const [extractError, setExtractError] = useState("");
-  const [structure, setStructure] = useState<unknown | null>(null);
-  const [structureLabel, setStructureLabel] = useState<string>("");
-  const sampleInputRef = useRef<HTMLInputElement>(null);
+  const [pasting, setPasting] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── (c) guidelines + current session content ───────────────────────────
-  const [guidelines, setGuidelines] = useState("");
-  const [content, setContent] = useState("");
-  const [contentRecording, setContentRecording] = useState(false);
-  const [contentTranscribing, setContentTranscribing] = useState(false);
-  const contentStreamRef = useRef<MediaStream | null>(null);
-  const contentRecorderRef = useRef<MediaRecorder | null>(null);
-  const contentChunksRef = useRef<Blob[]>([]);
-  const [contentExtracting, setContentExtracting] = useState(false);
-  const [contentFileError, setContentFileError] = useState("");
-  const contentFileInputRef = useRef<HTMLInputElement>(null);
+  const append = (text: string) => onChange((prev) => (prev ? `${prev}\n${text}` : text));
 
-  // ── result ───────────────────────────────────────────────────────────
-  const [sections, setSections] = useState<ReportSection[]>([]);
-  const [patientName, setPatientName] = useState("");
-  const [allCopied, setAllCopied] = useState(false);
-  const [genError, setGenError] = useState("");
-
-  const getBestMimeType = () => {
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
-    return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
-  };
-
-  // ── record report-type phrase ───────────────────────────────────────────
-  const startTypeRecording = async () => {
+  const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      typeStreamRef.current = stream; typeChunksRef.current = [];
+      streamRef.current = stream; chunksRef.current = [];
       const mimeType = getBestMimeType();
       const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      mr.ondataavailable = (e) => { if (e.data?.size > 0) typeChunksRef.current.push(e.data); };
-      mr.start(250); typeRecorderRef.current = mr; setTypeRecording(true);
+      mr.ondataavailable = (e) => { if (e.data?.size > 0) chunksRef.current.push(e.data); };
+      mr.start(250); recorderRef.current = mr; setRecording(true);
     } catch { /* mic unavailable — user can type instead */ }
   };
 
-  const stopTypeRecording = async () => {
-    const mr = typeRecorderRef.current;
+  const stopRecording = async () => {
+    const mr = recorderRef.current;
     if (!mr || mr.state === "inactive") return;
     await new Promise<void>((resolve) => { mr.onstop = () => resolve(); mr.stop(); });
-    typeStreamRef.current?.getTracks().forEach((t) => t.stop());
-    typeStreamRef.current = null; typeRecorderRef.current = null;
-    setTypeRecording(false);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null; recorderRef.current = null;
+    setRecording(false);
 
     const mimeType = getBestMimeType() || "audio/webm";
     const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
-    const blob = new Blob(typeChunksRef.current, { type: mimeType });
-    typeChunksRef.current = [];
-    setTypeTranscribing(true);
-    try {
-      const form = new FormData();
-      form.append("file", blob, `report-type.${ext}`);
-      const res = await fetch("/api/transcribe", { method: "POST", body: form });
-      if (res.ok) {
-        const { text } = await res.json();
-        setReportType((prev) => (prev ? `${prev} ${text}` : text));
-      }
-    } catch { /* silent — user can still type */ }
-    setTypeTranscribing(false);
+    const blob = new Blob(chunksRef.current, { type: mimeType });
+    chunksRef.current = [];
+    setTranscribing(true);
+    const text = await transcribeAudioFile(new File([blob], `note.${ext}`, { type: mimeType }));
+    if (text) append(text);
+    setTranscribing(false);
   };
 
-  // ── record current-patient content (themes, extension reason, session notes) ──
-  const startContentRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      contentStreamRef.current = stream; contentChunksRef.current = [];
-      const mimeType = getBestMimeType();
-      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      mr.ondataavailable = (e) => { if (e.data?.size > 0) contentChunksRef.current.push(e.data); };
-      mr.start(250); contentRecorderRef.current = mr; setContentRecording(true);
-    } catch { /* mic unavailable — user can type instead */ }
-  };
-
-  const stopContentRecording = async () => {
-    const mr = contentRecorderRef.current;
-    if (!mr || mr.state === "inactive") return;
-    await new Promise<void>((resolve) => { mr.onstop = () => resolve(); mr.stop(); });
-    contentStreamRef.current?.getTracks().forEach((t) => t.stop());
-    contentStreamRef.current = null; contentRecorderRef.current = null;
-    setContentRecording(false);
-
-    const mimeType = getBestMimeType() || "audio/webm";
-    const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
-    const blob = new Blob(contentChunksRef.current, { type: mimeType });
-    contentChunksRef.current = [];
-    setContentTranscribing(true);
-    try {
-      const form = new FormData();
-      form.append("file", blob, `content-note.${ext}`);
-      const res = await fetch("/api/transcribe", { method: "POST", body: form });
-      if (res.ok) {
-        const { text } = await res.json();
-        setContent((prev) => (prev ? `${prev}\n${text}` : text));
-      }
-    } catch { /* silent — user can still type */ }
-    setContentTranscribing(false);
-  };
-
-  // ── upload image/PDF of current-patient notes → extract anonymized content ──
-  const handleContentFile = async (f: File) => {
-    setContentFileError("");
+  const handleFile = async (f: File) => {
+    setFileError("");
     const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
     if (isPdf && f.size > MAX_PDF_BYTES) {
-      setContentFileError(
-        `קובץ ה-PDF גדול מדי (כ-${Math.round(f.size / (1024 * 1024))}MB). נא להעלות קובץ עד 8MB, או להעלות אותו כתמונה/סריקה במקום.`
-      );
-      if (contentFileInputRef.current) contentFileInputRef.current.value = "";
+      setFileError(`קובץ ה-PDF גדול מדי (כ-${Math.round(f.size / (1024 * 1024))}MB). נא להעלות קובץ עד 8MB, או להעלות אותו כתמונה/סריקה במקום.`);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
-    setContentExtracting(true);
+    setExtracting(true);
     try {
       let base64: string; let mime: string;
       if (isPdf) {
@@ -204,15 +142,154 @@ export default function ReportBuilder() {
       }
 
       const data = await res.json();
-      if (data.text) setContent((prev) => (prev ? `${prev}\n\n${data.text}` : data.text));
+      if (data.text) append(data.text);
     } catch (err) {
-      setContentFileError(err instanceof Error ? err.message : "שגיאה בחילוץ התוכן מהקובץ. ניתן לנסות שוב.");
+      setFileError(err instanceof Error ? err.message : "שגיאה בחילוץ התוכן מהקובץ. ניתן לנסות שוב.");
     } finally {
       // Privacy: the uploaded file's content is discarded from memory the instant
       // extraction finishes (or fails) — only its extracted, anonymized text remains.
-      setContentExtracting(false);
-      if (contentFileInputRef.current) contentFileInputRef.current.value = "";
+      setExtracting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  // Paste a voice message copied from WhatsApp/iPhone directly, with no need
+  // to save it to Files first — works while the textarea is focused (Ctrl+V).
+  const handleTextareaPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const audioFile = extractAudioFileFromClipboardEvent(e);
+    if (!audioFile) return; // let normal text paste proceed
+    e.preventDefault();
+    setFileError(""); setTranscribing(true);
+    const text = await transcribeAudioFile(audioFile);
+    if (text) append(text); else setFileError("לא הצלחתי לתמלל את קובץ השמע שהודבק. נסי שוב.");
+    setTranscribing(false);
+  };
+
+  // Explicit button variant — reads the OS clipboard directly, for cases with
+  // no focused text field to catch a native paste event.
+  const handlePasteButton = async () => {
+    setFileError(""); setPasting(true);
+    const audioFile = await readAudioFileFromClipboard();
+    if (!audioFile) {
+      setFileError("לא נמצא קובץ שמע בלוח. העתיקי הודעה קולית (למשל מוואטסאפ) ונסי שוב.");
+      setPasting(false);
+      return;
+    }
+    setPasting(false); setTranscribing(true);
+    const text = await transcribeAudioFile(audioFile);
+    if (text) append(text); else setFileError("לא הצלחתי לתמלל את קובץ השמע שהודבק. נסי שוב.");
+    setTranscribing(false);
+  };
+
+  const busy = transcribing || extracting || pasting;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+      <div className="flex items-center justify-between px-1 flex-wrap gap-y-1.5">
+        <label className="text-xs font-semibold text-sage-600">{label}</label>
+        <div className="flex items-center gap-2">
+          {extraAction}
+          <button onClick={recording ? stopRecording : startRecording} disabled={busy}
+            title="הקלטה קולית"
+            className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-95
+              ${recording ? "bg-red-500 text-white animate-pulse" : "bg-sage-50 text-sage-500 hover:bg-sage-100"}`}>
+            {transcribing ? <div className="w-3 h-3 rounded-full border-2 border-sage-300 border-t-sage-600 animate-spin" />
+              : recording ? <StopIcon className="w-3 h-3" /> : <MicIcon className="w-3.5 h-3.5" />}
+          </button>
+          <button onClick={() => fileInputRef.current?.click()} disabled={busy}
+            title="העלאת תמונה/מסמך"
+            className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-sage-50 text-sage-500 hover:bg-sage-100 transition-all active:scale-95">
+            {extracting ? <div className="w-3 h-3 rounded-full border-2 border-sage-300 border-t-sage-600 animate-spin" /> : <UploadIcon className="w-3.5 h-3.5" />}
+          </button>
+          <button onClick={handlePasteButton} disabled={busy}
+            title="הדבק שמע מהלוח (הודעה קולית שהועתקה)"
+            className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-sage-50 text-sage-500 hover:bg-sage-100 transition-all active:scale-95">
+            {pasting ? <div className="w-3 h-3 rounded-full border-2 border-sage-300 border-t-sage-600 animate-spin" /> : <PasteIcon className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      </div>
+      <textarea
+        className="w-full bg-white/80 border border-sage-100 rounded-2xl px-4 py-3 text-sm text-gray-700 leading-relaxed outline-none focus:border-sage-400 transition-colors min-h-[110px] shadow-sm"
+        placeholder={placeholder}
+        value={value} onChange={(e) => onChange(e.target.value)} onPaste={handleTextareaPaste} dir="rtl" />
+      {hint && <p className="text-[10px] text-sage-400 px-1">{hint}</p>}
+      {fileError && <p className="text-red-400 text-[11px] px-1">{fileError}</p>}
+    </div>
+  );
+}
+
+export default function ReportBuilder() {
+  const [stepState, setStepState] = useState<BuilderStep>("form");
+  const [loadingLabel, setLoadingLabel] = useState("מייצר דוח…");
+
+  // ── (a) report type ────────────────────────────────────────────────────
+  const [reportType, setReportType] = useState("");
+  const [typeRecording, setTypeRecording] = useState(false);
+  const [typeTranscribing, setTypeTranscribing] = useState(false);
+  const typeStreamRef = useRef<MediaStream | null>(null);
+  const typeRecorderRef = useRef<MediaRecorder | null>(null);
+  const typeChunksRef = useRef<Blob[]>([]);
+
+  // ── (b) sample document — deleted from memory right after structure extraction ──
+  const [sampleName, setSampleName] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState("");
+  const [structure, setStructure] = useState<unknown | null>(null);
+  const [structureLabel, setStructureLabel] = useState<string>("");
+  const sampleInputRef = useRef<HTMLInputElement>(null);
+
+  // ── (c) guidelines + current-period content + treatment history ─────────
+  const [guidelines, setGuidelines] = useState("");
+  const [content, setContent] = useState("");
+  const [history, setHistory] = useState("");
+
+  // ── result ───────────────────────────────────────────────────────────
+  const [sections, setSections] = useState<ReportSection[]>([]);
+  const [patientName, setPatientName] = useState("");
+  const [allCopied, setAllCopied] = useState(false);
+  const [genError, setGenError] = useState("");
+
+  // ── record report-type phrase ───────────────────────────────────────────
+  const startTypeRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      typeStreamRef.current = stream; typeChunksRef.current = [];
+      const mimeType = getBestMimeType();
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mr.ondataavailable = (e) => { if (e.data?.size > 0) typeChunksRef.current.push(e.data); };
+      mr.start(250); typeRecorderRef.current = mr; setTypeRecording(true);
+    } catch { /* mic unavailable — user can type instead */ }
+  };
+
+  const stopTypeRecording = async () => {
+    const mr = typeRecorderRef.current;
+    if (!mr || mr.state === "inactive") return;
+    await new Promise<void>((resolve) => { mr.onstop = () => resolve(); mr.stop(); });
+    typeStreamRef.current?.getTracks().forEach((t) => t.stop());
+    typeStreamRef.current = null; typeRecorderRef.current = null;
+    setTypeRecording(false);
+
+    const mimeType = getBestMimeType() || "audio/webm";
+    const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
+    const blob = new Blob(typeChunksRef.current, { type: mimeType });
+    typeChunksRef.current = [];
+    setTypeTranscribing(true);
+    const text = await transcribeAudioFile(new File([blob], `report-type.${ext}`, { type: mimeType }));
+    if (text) setReportType((prev) => (prev ? `${prev} ${text}` : text));
+    setTypeTranscribing(false);
+  };
+
+  // Auto-detect a pasted voice message in the (single-line) report-type field too.
+  const handleTypePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const audioFile = extractAudioFileFromClipboardEvent(e);
+    if (!audioFile) return;
+    e.preventDefault();
+    setTypeTranscribing(true);
+    const text = await transcribeAudioFile(audioFile);
+    if (text) setReportType((prev) => (prev ? `${prev} ${text}` : text));
+    setTypeTranscribing(false);
   };
 
   // ── sample upload → extract structure → immediately discard the file ───
@@ -292,12 +369,12 @@ export default function ReportBuilder() {
 
   // ── generate ─────────────────────────────────────────────────────────
   const generate = async () => {
-    setGenError(""); setLoadingLabel("מלביש את התוכן במבנה שנלמד…"); setStepState("loading");
+    setGenError(""); setLoadingLabel("סורק את התוכן וההיסטוריה ומלביש אותם במבנה שנלמד…"); setStepState("loading");
     try {
       const res = await fetch("/api/report-builder/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ structure, reportType, guidelines, content }),
+        body: JSON.stringify({ structure, reportType, guidelines, content, history }),
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
@@ -333,11 +410,11 @@ export default function ReportBuilder() {
   };
 
   const reset = () => {
-    setStepState("form"); setReportType(""); removeSample(); setGuidelines(""); setContent("");
+    setStepState("form"); setReportType(""); removeSample(); setGuidelines(""); setContent(""); setHistory("");
     setSections([]); setPatientName(""); setAllCopied(false); setGenError("");
   };
 
-  const canGenerate = (reportType.trim() || structure || guidelines.trim() || content.trim()) && !extracting;
+  const canGenerate = (reportType.trim() || structure || guidelines.trim() || content.trim() || history.trim()) && !extracting;
 
   // ── Render ───────────────────────────────────────────────────────────
   if (stepState === "loading") {
@@ -387,8 +464,6 @@ export default function ReportBuilder() {
     <div className="flex flex-col gap-5 py-4 animate-fade-in">
       <input ref={sampleInputRef} type="file" accept="image/*,.pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSampleFile(f); }} />
-      <input ref={contentFileInputRef} type="file" accept="image/*,.pdf" className="hidden"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleContentFile(f); }} />
 
       <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-1"><SparkleIcon /><p className="text-xs font-semibold text-purple-800">מחולל דוחות מותאם אישית</p></div>
@@ -400,7 +475,7 @@ export default function ReportBuilder() {
         <label className="text-xs font-semibold text-sage-600 px-1">סוג הדוח</label>
         <div className="bg-white/80 border border-sage-100 rounded-2xl flex items-center gap-2 px-4 py-3 shadow-sm focus-within:border-sage-400 transition-colors">
           <input type="text" placeholder='למשל: "סיכום ביניים", "בקשה להמשך טיפול", "דוח לוועדה"' value={reportType}
-            onChange={(e) => setReportType(e.target.value)}
+            onChange={(e) => setReportType(e.target.value)} onPaste={handleTypePaste}
             className="flex-1 bg-transparent outline-none text-sm text-sage-800 placeholder:text-sage-300" dir="rtl" />
           <button onClick={typeRecording ? stopTypeRecording : startTypeRecording} disabled={typeTranscribing}
             className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95
@@ -450,36 +525,26 @@ export default function ReportBuilder() {
           value={guidelines} onChange={(e) => setGuidelines(e.target.value)} dir="rtl" />
       </div>
 
-      {/* content to weave in */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between px-1 flex-wrap gap-y-1.5">
-          <label className="text-xs font-semibold text-sage-600">תוכן הפגישה / התקופה הנוכחית</label>
-          <div className="flex items-center gap-2">
-            <button onClick={importLastSession} className="text-[11px] text-sage-500 hover:text-sage-700 underline underline-offset-2">
-              ייבא מסיכום אחרון
-            </button>
-            <button onClick={contentRecording ? stopContentRecording : startContentRecording} disabled={contentTranscribing}
-              title="הקלטה קולית — תמות, סיבת הארכה ופרטי המפגשים"
-              className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-95
-                ${contentRecording ? "bg-red-500 text-white animate-pulse" : "bg-sage-50 text-sage-500 hover:bg-sage-100"}`}>
-              {contentTranscribing ? <div className="w-3 h-3 rounded-full border-2 border-sage-300 border-t-sage-600 animate-spin" />
-                : contentRecording ? <StopIcon className="w-3 h-3" /> : <MicIcon className="w-3.5 h-3.5" />}
-            </button>
-            <button onClick={() => contentFileInputRef.current?.click()} disabled={contentExtracting}
-              title="העלאת תמונה/מסמך של תרשומות המטופל/ת הנוכחי/ת"
-              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-sage-50 text-sage-500 hover:bg-sage-100 transition-all active:scale-95">
-              {contentExtracting ? <div className="w-3 h-3 rounded-full border-2 border-sage-300 border-t-sage-600 animate-spin" />
-                : <UploadIcon className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-        </div>
-        <textarea
-          className="w-full bg-white/80 border border-sage-100 rounded-2xl px-4 py-3 text-sm text-gray-700 leading-relaxed outline-none focus:border-sage-400 transition-colors min-h-[110px] shadow-sm"
-          placeholder="הדביקי כאן תמלול, תמות או סיכום מהפגישה הנוכחית — או הקליטי/העלי תמונה באמצעות הכפתורים למעלה"
-          value={content} onChange={(e) => setContent(e.target.value)} dir="rtl" />
-        <p className="text-[10px] text-sage-400 px-1">🎙️ הקלטה מתמללת אוטומטית • 📎 תמונה/PDF של תרשומות — התוכן מחולץ ועובר אנונימיזציה אוטומטית, הקובץ עצמו לא נשמר</p>
-        {contentFileError && <p className="text-red-400 text-[11px] px-1">{contentFileError}</p>}
-      </div>
+      {/* current-period content */}
+      <VoiceFileTextarea
+        label="תוכן הפגישה / התקופה הנוכחית"
+        placeholder="הדביקי כאן תמלול, תמות או סיכום מהפגישה הנוכחית — או השתמשי בכפתורים למעלה"
+        value={content} onChange={setContent}
+        hint="🎙️ הקלטה • 📎 תמונה/PDF • 📋 הדבקת שמע מהלוח — הכל מתומלל/מחולץ ועובר אנונימיזציה אוטומטית, שום קובץ לא נשמר"
+        extraAction={
+          <button onClick={importLastSession} className="text-[11px] text-sage-500 hover:text-sage-700 underline underline-offset-2">
+            ייבא מסיכום אחרון
+          </button>
+        }
+      />
+
+      {/* treatment history */}
+      <VoiceFileTextarea
+        label="היסטוריית טיפול / גיליון רפואי / סיכומים קודמים"
+        placeholder="הדביקי כאן היסטוריית טיפול, גיליון רפואי או סיכומים קודמים — או השתמשי בכפתורים למעלה להקלטה/העלאת קובץ/הדבקת שמע"
+        value={history} onChange={setHistory}
+        hint="🎙️ הקלטה • 📎 תמונה/PDF • 📋 הדבקת שמע מהלוח — ניתן לשלב עם טקסט מודבק, הכל נסרק יחד בעת הפקת הדוח"
+      />
 
       {genError && <p className="text-red-400 text-xs text-center bg-red-50 border border-red-200 rounded-xl px-3 py-2">{genError}</p>}
 

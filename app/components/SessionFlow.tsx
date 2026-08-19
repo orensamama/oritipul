@@ -4,9 +4,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { StyleKey, SessionSummary, SessionState, InputMode, ImageFile, SessionRecord } from "../lib/types";
 import { MOCK_SESSION } from "../lib/constants";
 import { loadDraft, saveDraft, clearDraft, pushHistory } from "../lib/storage";
+import { extractAudioFileFromClipboardEvent, readAudioFileFromClipboard } from "../lib/audio-paste";
 import {
   MicIcon, StopIcon, CheckIcon, XIcon, AudioFileIcon, CameraIcon, PlusIcon,
-  PauseIcon, PlayIcon, DownloadIcon, TrashIcon, CopyIcon, ShieldIcon,
+  PauseIcon, PlayIcon, DownloadIcon, TrashIcon, CopyIcon, ShieldIcon, PasteIcon,
 } from "./icons";
 import { LoadingSpinner, WaveformBars, SectionCard, FilePill, DropZone } from "./shared";
 
@@ -196,6 +197,43 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
 
     setState("stopped");
   };
+
+  // ── Paste audio from clipboard (e.g. a voice message copied from WhatsApp/iPhone) ──
+  const [pasteBusy, setPasteBusy] = useState(false);
+  const [pasteError, setPasteError] = useState("");
+
+  const adoptPastedAudioForMic = (pasted: File) => {
+    mimeTypeRef.current = pasted.type || "audio/webm";
+    audioBlobRef.current = pasted;
+    if (audioBlobUrlRef.current) URL.revokeObjectURL(audioBlobUrlRef.current);
+    const url = URL.createObjectURL(pasted);
+    audioBlobUrlRef.current = url;
+    setAudioUrl(url);
+    setState("stopped");
+  };
+
+  const pasteAudioFromClipboard = async () => {
+    setPasteError(""); setPasteBusy(true);
+    const pasted = await readAudioFileFromClipboard();
+    setPasteBusy(false);
+    if (!pasted) { setPasteError("לא נמצא קובץ שמע בלוח. העתיקי הודעה קולית (למשל מוואטסאפ) ונסי שוב."); return; }
+    if (inputMode === "audio") setFile(pasted); else adoptPastedAudioForMic(pasted);
+  };
+
+  // Passive listener — catches a native Ctrl+V paste of an audio file anywhere
+  // on the idle screen, no need to click the dedicated button first.
+  useEffect(() => {
+    if (state !== "idle" || (inputMode !== "mic" && inputMode !== "audio")) return;
+    const handler = (e: ClipboardEvent) => {
+      const pasted = extractAudioFileFromClipboardEvent(e);
+      if (!pasted) return;
+      e.preventDefault();
+      setPasteError("");
+      if (inputMode === "audio") setFile(pasted); else adoptPastedAudioForMic(pasted);
+    };
+    window.addEventListener("paste", handler);
+    return () => window.removeEventListener("paste", handler);
+  }, [state, inputMode]);
 
   const sendToAI = async () => {
     // Use saved blob (set by stopRecording) — supports retry without re-recording
@@ -707,6 +745,11 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
                 className="w-28 h-28 rounded-full flex items-center justify-center shadow-lg bg-gradient-to-br from-sage-500 to-sage-600 text-white shadow-sage-300/50 hover:from-sage-400 hover:to-sage-500 transition-all duration-200 active:scale-95">
                 <MicIcon className="w-12 h-12" />
               </button>
+              <button onClick={pasteAudioFromClipboard} disabled={pasteBusy}
+                className="flex items-center gap-1.5 text-xs text-sage-400 hover:text-sage-600 transition-colors py-1">
+                <PasteIcon className="w-3.5 h-3.5" />{pasteBusy ? "מדביק…" : "הדבק שמע מהלוח"}
+              </button>
+              {pasteError && <p className="text-red-400 text-[11px] text-center max-w-[260px]">{pasteError}</p>}
             </>
           )}
 
@@ -718,8 +761,15 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
                 <><FilePill name={file.name} onRemove={() => { setFile(null); if (audioRef.current) audioRef.current.value = ""; }} />
                 <button onClick={processAudio} className="w-full py-4 rounded-2xl bg-sage-500 text-white font-semibold text-sm shadow-md shadow-sage-200/60 hover:bg-sage-600 active:scale-[0.98] transition-all duration-200">עבד קובץ שמע ←</button></>
               ) : (
-                <DropZone icon={<AudioFileIcon />} label="בחרי קובץ שמע" sub="MP3, WAV, M4A" onClick={() => audioRef.current?.click()} />
+                <>
+                  <DropZone icon={<AudioFileIcon />} label="בחרי קובץ שמע" sub="MP3, WAV, M4A" onClick={() => audioRef.current?.click()} />
+                  <button onClick={pasteAudioFromClipboard} disabled={pasteBusy}
+                    className="flex items-center gap-1.5 text-xs text-sage-400 hover:text-sage-600 transition-colors py-1">
+                    <PasteIcon className="w-3.5 h-3.5" />{pasteBusy ? "מדביק…" : "הדבק שמע מהלוח"}
+                  </button>
+                </>
               )}
+              {pasteError && <p className="text-red-400 text-[11px] text-center">{pasteError}</p>}
             </div>
           )}
 
