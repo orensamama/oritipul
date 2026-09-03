@@ -80,7 +80,7 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
       const res = await fetch("/api/report-builder/extract-structure", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleBase64: base64, sampleMime: mime, sampleName: f.name, reportType: reportTemplate }),
+        body: JSON.stringify({ sampleBase64: base64, sampleMime: mime, sampleName: f.name, reportType: reportTemplate, knownPatientName: patientName }),
       });
 
       if (!res.ok) {
@@ -135,6 +135,10 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
         body: JSON.stringify({
           structure, reportTemplate, guidelines, content, history,
           therapistName, therapistTitle, therapistLicense, therapistFramework,
+          // Never part of the guidance/content the AI drafts from — used only
+          // server-side, after the AI responds, to deterministically scrub any
+          // residual real name from the returned text. See app/lib/anonymize.ts.
+          knownPatientName: patientName,
           ...(iteration ? { previousDraft: sections, clarificationAnswers } : {}),
         }),
       });
@@ -205,10 +209,10 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
             <span className="text-sm">🔏</span>
             <p className="text-xs font-semibold text-purple-800">שם המטופל/ת לצורך הטבעה בטקסט</p>
           </div>
-          <input type="text" placeholder="השם יוטבע רק בטקסט המוצג/מיוצא — לא נשלח ל-AI" value={patientName}
+          <input type="text" placeholder="למילוי בטקסט המוצג/מיוצא בלבד, ולניקוי בטיחות אוטומטי" value={patientName}
             onChange={(e) => setPatientName(e.target.value)}
             className="bg-white/80 border border-purple-200 rounded-xl px-3 py-2 text-sm text-purple-900 outline-none focus:border-purple-400 transition-colors placeholder:text-purple-300" dir="rtl" />
-          <p className="text-[10px] text-purple-500">ברירת מחדל: "{PATIENT_TOKEN}" בכל מקום בטקסט</p>
+          <p className="text-[10px] text-purple-500">ברירת מחדל: "{PATIENT_TOKEN}" בכל מקום בטקסט — השם לעולם לא נכלל בהנחיה שנשלחת ל-AI</p>
         </div>
 
         {sections.map((sec, i) => (
@@ -238,6 +242,7 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
               label="תשובות / השלמות (טקסט, קול או קובץ)"
               placeholder="השלימי כאן בנקודות את התשובות להבהרות שלמעלה — או הקליטי/העלי קובץ"
               value={clarificationAnswers} onChange={setClarificationAnswers}
+              knownPatientName={patientName}
             />
             <button onClick={() => runGenerate(true)} disabled={!clarificationAnswers.trim()}
               className="w-full py-3 rounded-2xl bg-amber-500 text-white font-semibold text-sm shadow-sm hover:bg-amber-600 active:scale-[0.98] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -279,6 +284,22 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
       <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-1"><SparkleIcon /><p className="text-xs font-semibold text-purple-800">מחולל דוחות מותאם אישית</p></div>
         <p className="text-[11px] text-purple-600 leading-relaxed">בחרי סוג דוח, הוסיפי תוכן והנחיות — תקבלי טיוטה, תוכלי להשלים הבהרות, ורק אז לאשר ולייצא</p>
+      </div>
+
+      {/* Patient name — optional, local safety net only (see below) */}
+      <div className="bg-purple-50/60 border border-purple-100 rounded-2xl p-4 flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">🔏</span>
+          <p className="text-xs font-semibold text-purple-800">שם המטופל/ת (אופציונלי)</p>
+        </div>
+        <input type="text" placeholder="למילוי בטקסט המוצג/מיוצא בלבד, ולניקוי בטיחות אוטומטי" value={patientName}
+          onChange={(e) => setPatientName(e.target.value)}
+          className="bg-white/80 border border-purple-200 rounded-xl px-3 py-2 text-sm text-purple-900 outline-none focus:border-purple-400 transition-colors placeholder:text-purple-300" dir="rtl" />
+        <p className="text-[10px] text-purple-500 leading-relaxed">
+          השם לעולם אינו נכלל בהנחיה שנשלחת ל-AI. הוא משמש רק (1) בדפדפן שלך, כדי להטביע אותו במקום
+          "{PATIENT_TOKEN}" בטקסט המוצג/מועתק/מיוצא, ו-(2) כרשת ביטחון בשרת שמוחקת אוטומטית כל הופעה שלו
+          אם בטעות "דלף" לתוך תשובת ה-AI — ולא לשום מטרה אחרת.
+        </p>
       </div>
 
       {/* (a) report template */}
@@ -335,6 +356,7 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
         label="הנחיות ודגשים למטפלת"
         placeholder='למשל: "להתמקד בתפקוד הרגשי, שפה קלינית רשמית, להתייחס לתמות מהמפגש"'
         value={guidelines} onChange={setGuidelines}
+        knownPatientName={patientName}
       />
 
       {/* current-period content */}
@@ -348,6 +370,7 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
             ייבא מסיכום אחרון
           </button>
         }
+        knownPatientName={patientName}
       />
 
       {/* treatment history */}
@@ -356,6 +379,7 @@ export default function ReportBuilder({ therapistName, therapistTitle, therapist
         placeholder="הדביקי כאן היסטוריית טיפול, גיליון רפואי או סיכומים קודמים — או השתמשי בכפתורים למעלה להקלטה/העלאת קובץ/הדבקת שמע"
         value={history} onChange={setHistory}
         hint="🎙️ הקלטה • 📎 תמונה/PDF • 📋 הדבקת שמע מהלוח — ניתן לשלב עם טקסט מודבק, הכל נסרק יחד בעת הפקת הדוח"
+        knownPatientName={patientName}
       />
 
       {genError && <p className="text-red-400 text-xs text-center bg-red-50 border border-red-200 rounded-xl px-3 py-2">{genError}</p>}

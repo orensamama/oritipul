@@ -25,6 +25,9 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
   const [file, setFile]            = useState<File | null>(null);        // audio file
   const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);          // multi-image
   const [additionalNotes, setAdditionalNotes] = useState("");            // combined with whichever input mode is used
+  // Optional — used only client-side for display, and server-side purely to
+  // scrub a leaked real name from the AI response. Never sent as prompt content.
+  const [knownPatientName, setKnownPatientName] = useState("");
 
   // ── Manual timer (supports pause) ────────────────────────────────────────
   const [timerSecs, setTimerSecs]   = useState(0);
@@ -126,7 +129,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
     audioBlobRef.current = null;
     setAudioUrl(null); setErrorMsg("");
     setSummary({ official: "", themes: "", insights: "", goals: "" });
-    setPersonalNotes(""); setFile(null); setImageFiles([]); setAdditionalNotes("");
+    setPersonalNotes(""); setFile(null); setImageFiles([]); setAdditionalNotes(""); setKnownPatientName("");
     setMicError(""); setNoteMicError("");
     setMode("mic"); setState("idle"); setNoteState("idle");
     setSessionDate(new Date().toLocaleDateString("he-IL"));
@@ -251,7 +254,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
       const sumRes = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, style: summaryStyle, extraNotes: additionalNotes }),
+        body: JSON.stringify({ text, style: summaryStyle, extraNotes: additionalNotes, knownPatientName }),
       });
       if (!sumRes.ok) throw new Error(`שגיאת סיכום (${sumRes.status})`);
       const result = await sumRes.json();
@@ -318,7 +321,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
       setLabel("מסכם פגישה…");
       const sumRes = await fetch("/api/summarize", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, style: summaryStyle, extraNotes: additionalNotes }),
+        body: JSON.stringify({ text, style: summaryStyle, extraNotes: additionalNotes, knownPatientName }),
       });
       if (!sumRes.ok) throw new Error();
       const result = await sumRes.json();
@@ -352,7 +355,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
       setLabel("מסכם פגישה…");
       const sumRes = await fetch("/api/summarize", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images, style: summaryStyle, extraNotes: additionalNotes }),
+        body: JSON.stringify({ images, style: summaryStyle, extraNotes: additionalNotes, knownPatientName }),
       });
       if (!sumRes.ok) throw new Error();
       const result = await sumRes.json();
@@ -622,12 +625,23 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
 
           {/* ── Additional notes — combinable with whichever input mode above is used ── */}
           {state === "idle" && (
-            <div className="w-full max-w-[300px]">
+            <div className="w-full max-w-[300px] flex flex-col gap-3">
+              <div className="bg-sage-50/60 border border-sage-100 rounded-2xl p-3 flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold text-sage-600 px-0.5">שם המטופל/ת (אופציונלי)</label>
+                <input type="text" placeholder="לרשת ביטחון בלבד — לא נשלח כתוכן ל-AI" value={knownPatientName}
+                  onChange={(e) => setKnownPatientName(e.target.value)}
+                  className="bg-white/80 border border-sage-200 rounded-xl px-3 py-2 text-xs text-sage-800 outline-none focus:border-sage-400 transition-colors placeholder:text-sage-300" dir="rtl" />
+                <p className="text-[10px] text-sage-400 leading-relaxed">
+                  משמש רק כרשת ביטחון בשרת — למקרה ששם המטופל/ת נאמר בהקלטה וה-AI לא הצליח להסתיר אותו,
+                  השם יימחק אוטומטית מהתוצאה. לעולם אינו נכלל בהנחיה שנשלחת ל-AI.
+                </p>
+              </div>
               <VoiceFileTextarea
                 label="הערות נוספות לשילוב בסיכום"
                 placeholder="טקסט נוסף לשילוב עם ההקלטה/הקובץ — או הקליטי/הדביקי/העלי קובץ"
                 value={additionalNotes} onChange={setAdditionalNotes}
                 hint="משולב אוטומטית עם ההקלטה/קובץ השמע/התמונות שתבחרי, לפני השליחה ל-AI"
+                knownPatientName={knownPatientName}
               />
             </div>
           )}

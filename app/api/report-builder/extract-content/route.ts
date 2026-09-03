@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MAX_DECODED_BYTES, MAX_PDF_TEXT_CHARS, decodedByteLength, detectFileKind, extractPdfText, jsonError } from "../shared";
+import { sanitizeJsonStrings } from "../../../lib/anonymize";
 
 // ─── Content extraction prompt (current patient) ──────────────────────────────
 // Unlike extract-structure, this endpoint DOES extract real clinical content —
@@ -11,6 +12,11 @@ const SYSTEM_PROMPT = `אתה עוזר AI לחילוץ תוכן מתרשומות
 קרא בעיון את המסמך המצורף וחלץ ממנו את כל המידע הקליני הרלוונטי: תמות מרכזיות, אירועים,
 התקדמות, סיבות (למשל סיבה לבקשת הארכה), ופרטים משמעותיים אחרים — בצורה מסודרת, ברורה
 וקריאה בעברית, שתשמש כתוכן גולמי להזנה לדוח טיפולי.
+
+╔══ כלל ברזל — איסור מוחלט על שמות ══╗
+חל איסור מוחלט לכלול שמות פרטיים, שמות משפחה או פרטים מזהים של מטופלים/משתתפים בטקסט
+הנוצר! יש להשתמש אך ורק במונח הניטרלי "[מטופל/ת]" (או "[המטופל/ת]"/"[הפונה]") בכל
+מקום שבו מוזכר המטופל/ת — גם אם השם מופיע בבירור במסמך המצורף.
 
 ══ כללי אנונימיזציה (חובה מוחלטת) ══
 - שם המטופל/ת → [מטופל/ת]
@@ -33,7 +39,7 @@ const MOCK_CONTENT = {
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
 
-  let body: { fileBase64?: string; fileMime?: string; fileName?: string };
+  let body: { fileBase64?: string; fileMime?: string; fileName?: string; knownPatientName?: string };
   try {
     body = await req.json();
   } catch (err) {
@@ -166,7 +172,9 @@ ${pdfText.slice(0, MAX_PDF_TEXT_CHARS)}
       return jsonError(502, "INVALID_JSON", "מנוע ה-AI החזיר פלט לא תקין. נסי שוב.");
     }
 
-    return NextResponse.json({ text: parsed.text ?? "" });
+    // Server-side anonymization backstop: never trust the prompt alone. Runs
+    // only on OpenAI's response — knownPatientName is never sent to OpenAI.
+    return NextResponse.json(sanitizeJsonStrings({ text: parsed.text ?? "" }, [body.knownPatientName]));
   } catch (err) {
     console.error("[report-builder/extract-content] unexpected error", {
       name: body.fileName,

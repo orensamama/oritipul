@@ -11,7 +11,7 @@ const MAX_PDF_BYTES = 8 * 1024 * 1024; // 8MB — matches the server-side guard
 // + clipboard audio paste (event & button) — the app's one "combine voice,
 // text and files freely" building block, used across the session and
 // report-builder screens.
-export default function VoiceFileTextarea({ label, placeholder, value, onChange, hint, extraAction, minRows = 4 }: {
+export default function VoiceFileTextarea({ label, placeholder, value, onChange, hint, extraAction, minRows = 4, knownPatientName }: {
   label: string;
   placeholder: string;
   value: string;
@@ -19,6 +19,9 @@ export default function VoiceFileTextarea({ label, placeholder, value, onChange,
   hint?: string;
   extraAction?: React.ReactNode;
   minRows?: number;
+  // Optional, purely a server-side safety-scrub hint for extract-content — never
+  // included in any AI prompt. See app/lib/anonymize.ts.
+  knownPatientName?: string;
 }) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -89,7 +92,7 @@ export default function VoiceFileTextarea({ label, placeholder, value, onChange,
       const res = await fetch("/api/report-builder/extract-content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileBase64: base64, fileMime: mime, fileName: f.name }),
+        body: JSON.stringify({ fileBase64: base64, fileMime: mime, fileName: f.name, knownPatientName }),
       });
 
       if (!res.ok) {

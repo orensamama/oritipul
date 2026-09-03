@@ -13,6 +13,9 @@ export default function ReportFlow({ summaryStyle }: { summaryStyle: StyleKey })
   const [updatesMode, setUpdatesMode] = useState<"text" | "audio">("text");
   const [updatesText, setUpdatesText] = useState("");
   const [, setUpdatesFile] = useState<File | null>(null);
+  // Optional — used only client-side for display, and server-side purely to
+  // scrub a leaked real name from the AI response. Never sent as prompt content.
+  const [knownPatientName, setKnownPatientName] = useState("");
   const [recording, setRecording] = useState(false);
   const [label, setLabel]         = useState("מייצר דוח…");
   const [result, setResult]       = useState({ periodSummary: "", progress: "", themes: "", recommendations: "" });
@@ -25,6 +28,7 @@ export default function ReportFlow({ summaryStyle }: { summaryStyle: StyleKey })
   const reset = () => {
     if (loadingRef.current) clearTimeout(loadingRef.current);
     setOldReport(null); setOldPreview(null); setUpdatesText(""); setUpdatesFile(null);
+    setKnownPatientName("");
     setRecording(false); setAllCopied(false); setStep("upload");
     if (reportRef.current) reportRef.current.value = "";
     if (audioRef.current) audioRef.current.value = "";
@@ -57,7 +61,7 @@ export default function ReportFlow({ summaryStyle }: { summaryStyle: StyleKey })
       setLabel("מייצר דוח מעודכן…");
       const res = await fetch("/api/report", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ oldReportBase64, oldReportMime, updates: updatesText, style: summaryStyle }),
+        body: JSON.stringify({ oldReportBase64, oldReportMime, updates: updatesText, style: summaryStyle, knownPatientName }),
       });
       setResult(await res.json()); setStep("result");
     } catch { setResult({ ...MOCK_REPORT }); setStep("result"); }
@@ -138,6 +142,15 @@ export default function ReportFlow({ summaryStyle }: { summaryStyle: StyleKey })
           <div className="bg-sage-50 border border-sage-200 rounded-2xl p-4">
             <p className="text-xs font-semibold text-sage-700 mb-1">שלב 2 — עדכונים חדשים</p>
             <p className="text-[11px] text-sage-600 leading-relaxed">הקליטי או כתבי את העדכונים מאז הדוח האחרון</p>
+          </div>
+
+          {/* Optional safety-net name — never sent as prompt content */}
+          <div className="bg-sage-50/60 border border-sage-100 rounded-2xl p-3 flex flex-col gap-1.5">
+            <label className="text-[11px] font-semibold text-sage-600 px-0.5">שם המטופל/ת (אופציונלי)</label>
+            <input type="text" placeholder="לרשת ביטחון בלבד — לא נשלח כתוכן ל-AI" value={knownPatientName}
+              onChange={(e) => setKnownPatientName(e.target.value)}
+              className="bg-white/80 border border-sage-200 rounded-xl px-3 py-2 text-xs text-sage-800 outline-none focus:border-sage-400 transition-colors placeholder:text-sage-300" dir="rtl" />
+            <p className="text-[10px] text-sage-400 leading-relaxed">משמש רק כרשת ביטחון בשרת שמוחקת אוטומטית כל הופעה של השם בתשובת ה-AI — לעולם אינו נכלל בהנחיה שנשלחת אליה.</p>
           </div>
 
           {/* Mode toggle */}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sanitizeJsonStrings } from "../../lib/anonymize";
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 const REPORT_SYSTEM_PROMPT = `אתה עוזר AI מקצועי לניסוח דוחות טיפוליים תקופתיים.
@@ -15,6 +16,11 @@ const REPORT_SYSTEM_PROMPT = `אתה עוזר AI מקצועי לניסוח דו�
 או מסקנות קליניות שלא נתמכות במפורש במקורות שסופקו. אל תמציא/י פרטים, יעדים או אירועים
 שלא הוזכרו. אם פרט רלוונטי (תאריך, מספר מפגשים וכו') חסר במקורות — כתבי במפורש
 "[לא צוין]" באותו המקום, במקום להמציא ערך.
+
+╔══ כלל ברזל — איסור מוחלט על שמות ══╗
+חל איסור מוחלט לכלול שמות פרטיים, שמות משפחה או פרטים מזהים של מטופלים/משתתפים בטקסט
+הנוצר! יש להשתמש אך ורק במונח הניטרלי "[מטופל/ת]" (או "[המטופל/ת]"/"[הפונה]") בכל
+מקום שבו מוזכר המטופל/ת — גם אם השם הופיע בבירור בדוח הקודם או בעדכונים.
 
 כללי אנונימיזציה (חובה):
 - החלף כל שם פרטי של מטופל/ת ב-[מטופל/ת]
@@ -53,6 +59,7 @@ export async function POST(req: NextRequest) {
       oldReportMime?: string;
       updates?: string;
       style?: string;
+      knownPatientName?: string;
     };
 
     // Simulation mode
@@ -104,7 +111,9 @@ ${body.updates ? `\nעדכונים חדשים מהמטפלת:\n${body.updates}` 
 
     const data = await res.json();
     const parsed = JSON.parse(data.choices[0].message.content);
-    return NextResponse.json(parsed);
+    // Server-side anonymization backstop: never trust the prompt alone. Runs
+    // only on OpenAI's response — knownPatientName is never sent to OpenAI.
+    return NextResponse.json(sanitizeJsonStrings(parsed, [body.knownPatientName]));
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

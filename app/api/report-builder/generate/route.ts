@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ReportTemplateKey } from "../../../lib/types";
+import { sanitizeJsonStrings } from "../../../lib/anonymize";
 
 const TEMPLATE_LABELS: Record<ReportTemplateKey, string> = {
   extension:    "דוח לבקשת הארכה/הערכה",
@@ -75,6 +76,12 @@ function buildSystemPrompt(template: ReportTemplateKey, isIteration: boolean) {
 כמות מפגשים) אינו קיים בחומר שסופק — כתבי במפורש "[לא צוין]" באותו המקום בתוכן הסעיף,
 ובנוסף הוסיפי שאלת הבהרה מתאימה למערך clarifications (למשל: "לא צוין תאריך תחילת הטיפול
 — נא לציין."). לעולם אל תמציאי ערך במקום לכתוב "[לא צוין]".
+
+╔══ כלל ברזל — איסור מוחלט על שמות ══╗
+חל איסור מוחלט לכלול שמות פרטיים, שמות משפחה או פרטים מזהים של מטופלים/משתתפים בטקסט
+הנוצר! יש להשתמש אך ורק במונח הניטרלי "[מטופל/ת]" (או "[המטופל/ת]"/"[הפונה]") בכל
+מקום שבו מוזכר המטופל/ת — גם אם השם הופיע בבירור בתוכן, בהיסטוריה, או בטיוטה הקודמת.
+כלל זה חל על כל סעיף בדוח, ללא יוצא מן הכלל.
 
 ══ כללי אנונימיזציה (חובה מוחלטת) ══
 - שם המטופל/ת → [מטופל/ת] (לעולם אל תשתמשי בשם אמיתי אם הוזכר בתוכן או בהיסטוריה)
@@ -171,6 +178,7 @@ export async function POST(req: NextRequest) {
       therapistFramework?: string;
       previousDraft?: { heading: string; content: string }[];
       clarificationAnswers?: string;
+      knownPatientName?: string;
     };
 
     const template: ReportTemplateKey = body.reportTemplate && body.reportTemplate in TEMPLATE_LABELS ? body.reportTemplate : "periodic";
@@ -182,10 +190,14 @@ export async function POST(req: NextRequest) {
       // Simulate resolution: once the therapist answers clarifications in demo
       // mode, show a draft with no outstanding questions so the "approve" step
       // is reachable without a real API key.
-      const sections = isIteration
+      const rawSections = isIteration
         ? mock.sections.map((s) => ({ ...s, content: s.content.replace(/\[לא צוין\]/g, "מולא לפי התשובה שסופקה") }))
         : mock.sections;
-      const clarifications = isIteration ? [] : mock.clarifications;
+      const rawClarifications = isIteration ? [] : mock.clarifications;
+      // Server-side anonymization backstop applies even in demo mode, for
+      // consistent behavior between simulated and live responses.
+      const sections = sanitizeJsonStrings(rawSections, [body.knownPatientName]);
+      const clarifications = sanitizeJsonStrings(rawClarifications, [body.knownPatientName]);
       const finalSections = template === "extension"
         ? [...sections, buildSignatureSection(body.therapistName, body.therapistTitle, body.therapistLicense, body.therapistFramework)]
         : sections;
@@ -251,8 +263,15 @@ export async function POST(req: NextRequest) {
 
     const data = await res.json();
     const parsed = JSON.parse(data.choices[0].message.content) as { sections?: unknown; clarifications?: unknown };
-    const sections = Array.isArray(parsed.sections) ? parsed.sections : [];
-    const clarifications = Array.isArray(parsed.clarifications) ? parsed.clarifications.filter((c) => typeof c === "string") : [];
+    const rawSections = Array.isArray(parsed.sections) ? parsed.sections : [];
+    const rawClarifications = Array.isArray(parsed.clarifications) ? parsed.clarifications.filter((c) => typeof c === "string") : [];
+
+    // Server-side anonymization backstop: never trust the prompt alone. Runs
+    // only on OpenAI's response, before the (unsanitized, deterministic)
+    // therapist signature block is appended — knownPatientName is never sent
+    // to OpenAI, and this scrub never touches the therapist's own name.
+    const sections = sanitizeJsonStrings(rawSections, [body.knownPatientName]);
+    const clarifications = sanitizeJsonStrings(rawClarifications, [body.knownPatientName]);
 
     const finalSections = template === "extension"
       ? [...sections, buildSignatureSection(body.therapistName, body.therapistTitle, body.therapistLicense, body.therapistFramework)]

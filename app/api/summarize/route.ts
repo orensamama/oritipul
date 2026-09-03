@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sanitizeJsonStrings } from "../../lib/anonymize";
 
 // ─── Clinical prompt ──────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `את/ה עוזר/ת AI המסייע/ת למטפלת בכתיבת תיעוד קליני של פגישה טיפולית,
@@ -20,6 +21,11 @@ const SYSTEM_PROMPT = `את/ה עוזר/ת AI המסייע/ת למטפלת בכ�
 במפורש "[לא צוין]" באותו המקום, במקום להמציא או לנחש ערך. תצפיות מקצועיות (שפת גוף,
 שינויי מצב רוח וכו') מותרות רק כאשר יש להן עוגן ברור בטקסט — לא ניתוח תאורטי חיצוני
 שאינו מבוסס על מה שקרה בפועל בחדר.
+
+╔══ כלל ברזל — איסור מוחלט על שמות ══╗
+חל איסור מוחלט לכלול שמות פרטיים, שמות משפחה או פרטים מזהים של מטופלים/משתתפים בטקסט
+הנוצר! יש להשתמש אך ורק במונח הניטרלי "[מטופל/ת]" (או "[המטופל/ת]"/"[הפונה]") בכל
+מקום שבו מוזכר המטופל/ת — גם אם השם הופיע בבירור בתמלול/בתרשומת המקורית.
 
 ══ כללי אנונימיזציה (חובה מוחלטת) ══
 - שם המטופל/ת → [מטופל/ת]
@@ -84,6 +90,7 @@ export async function POST(req: NextRequest) {
       images?: { base64: string; mimeType: string }[];
       style?: string;
       extraNotes?: string;
+      knownPatientName?: string;
     };
 
     // Simulation mode — return mock immediately (no API key)
@@ -165,7 +172,9 @@ export async function POST(req: NextRequest) {
 
     const data = await res.json();
     const parsed = JSON.parse(data.choices[0].message.content);
-    return NextResponse.json(parsed);
+    // Server-side anonymization backstop: never trust the prompt alone. Runs
+    // only on OpenAI's response — knownPatientName is never sent to OpenAI.
+    return NextResponse.json(sanitizeJsonStrings(parsed, [body.knownPatientName]));
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

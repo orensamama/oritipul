@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MAX_DECODED_BYTES, MAX_PDF_TEXT_CHARS, decodedByteLength, detectFileKind, extractPdfText, jsonError } from "../shared";
+import { sanitizeJsonStrings } from "../../../lib/anonymize";
 
 // ─── Structure-only extraction prompt ─────────────────────────────────────────
 // Privacy: this endpoint must NEVER echo back, log, or persist any patient content
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
     sampleMime?: string;
     sampleName?: string;
     reportType?: string;
+    knownPatientName?: string;
   };
   try {
     body = await req.json();
@@ -223,7 +225,9 @@ ${pdfText.slice(0, MAX_PDF_TEXT_CHARS)}
       return jsonError(502, "INVALID_JSON", "מנוע ה-AI החזיר פלט לא תקין. נסי שוב.");
     }
 
-    return NextResponse.json({ structure: sanitizeStructure(parsed) });
+    // Server-side anonymization backstop, on top of the structure-only prompt
+    // and the length-cap truncation above — knownPatientName is never sent to OpenAI.
+    return NextResponse.json({ structure: sanitizeJsonStrings(sanitizeStructure(parsed), [body.knownPatientName]) });
   } catch (err) {
     console.error("[report-builder/extract-structure] unexpected error", {
       name: body.sampleName,
