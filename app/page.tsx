@@ -30,6 +30,9 @@ export default function HomePage() {
   const [isDemo, setIsDemo]                     = useState(true);
   const [approaches, setApproaches]             = useState<string[]>([]);
   const [otherApproach, setOtherApproach]       = useState("");
+  const [therapistTitle, setTherapistTitle]         = useState("");
+  const [therapistLicense, setTherapistLicense]     = useState("");
+  const [therapistFramework, setTherapistFramework] = useState("");
 
   useEffect(() => {
     const style = localStorage.getItem("summaryStyle") as StyleKey | null;
@@ -41,6 +44,9 @@ export default function HomePage() {
       if (saved) setApproaches(JSON.parse(saved));
     } catch { /* ignore */ }
     setOtherApproach(localStorage.getItem("therapistOtherApproach") || "");
+    setTherapistTitle(localStorage.getItem("therapistTitle") || "");
+    setTherapistLicense(localStorage.getItem("therapistLicense") || "");
+    setTherapistFramework(localStorage.getItem("therapistFramework") || "");
     if (sessionStorage.getItem("unlocked") === "1") setUnlocked(true);
     // Check if API key is configured on the server
     fetch("/api/status")
@@ -54,6 +60,9 @@ export default function HomePage() {
   const handleNameChange  = (name: string) => { setTherapistName(name); localStorage.setItem("therapistName", name); };
   const handleApproachesChange = (a: string[]) => { setApproaches(a); localStorage.setItem("therapistApproaches", JSON.stringify(a)); };
   const handleOtherApproachChange = (v: string) => { setOtherApproach(v); localStorage.setItem("therapistOtherApproach", v); };
+  const handleTitleChange     = (v: string) => { setTherapistTitle(v); localStorage.setItem("therapistTitle", v); };
+  const handleLicenseChange   = (v: string) => { setTherapistLicense(v); localStorage.setItem("therapistLicense", v); };
+  const handleFrameworkChange = (v: string) => { setTherapistFramework(v); localStorage.setItem("therapistFramework", v); };
 
   const displayTitle = therapistName.trim() ? `חדר הטיפולים של ${therapistName.trim()}` : "חדר הטיפולים";
 
@@ -80,6 +89,9 @@ export default function HomePage() {
         therapistName={therapistName} onNameChange={handleNameChange}
         approaches={approaches} onApproachesChange={handleApproachesChange}
         otherApproach={otherApproach} onOtherApproachChange={handleOtherApproachChange}
+        therapistTitle={therapistTitle} onTitleChange={handleTitleChange}
+        therapistLicense={therapistLicense} onLicenseChange={handleLicenseChange}
+        therapistFramework={therapistFramework} onFrameworkChange={handleFrameworkChange}
       />
 
       <main className="min-h-dvh flex flex-col max-w-md mx-auto px-4 pb-8">
@@ -136,7 +148,10 @@ export default function HomePage() {
           <HistoryScreen onRestore={handleRestore} />
         )}
         {screen === "builder" && (
-          <ReportBuilder />
+          <ReportBuilder
+            therapistName={therapistName} therapistTitle={therapistTitle}
+            therapistLicense={therapistLicense} therapistFramework={therapistFramework}
+          />
         )}
       </main>
     </>

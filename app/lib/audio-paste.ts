@@ -4,6 +4,12 @@
 // permission prompt) and an explicit clipboard read (works from a button
 // click anywhere, e.g. areas with no focused text field).
 
+export function getBestMimeType() {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+}
+
 export function extractAudioFileFromClipboardEvent(e: ClipboardEvent | React.ClipboardEvent): File | null {
   const items = e.clipboardData?.items;
   if (!items) return null;

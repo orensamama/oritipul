@@ -21,3 +21,12 @@ export interface ReportSection {
   heading: string;
   content: string;
 }
+
+export type ReportTemplateKey = "extension" | "periodic" | "psychiatrist" | "final";
+
+export interface TherapistProfile {
+  therapistName: string;
+  therapistTitle: string;
+  therapistLicense: string;
+  therapistFramework: string;
+}

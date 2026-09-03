@@ -5,12 +5,16 @@ import { STYLE_OPTIONS, APPROACH_OPTIONS } from "../lib/constants";
 import { XIcon, CheckIcon, ShieldIcon } from "./icons";
 
 export default function SettingsDrawer({ open, onClose, selected, onSelect, therapistName, onNameChange,
-  approaches, onApproachesChange, otherApproach, onOtherApproachChange }: {
+  approaches, onApproachesChange, otherApproach, onOtherApproachChange,
+  therapistTitle, onTitleChange, therapistLicense, onLicenseChange, therapistFramework, onFrameworkChange }: {
   open: boolean; onClose: () => void;
   selected: StyleKey; onSelect: (k: StyleKey) => void;
   therapistName: string; onNameChange: (n: string) => void;
   approaches: string[]; onApproachesChange: (a: string[]) => void;
   otherApproach: string; onOtherApproachChange: (v: string) => void;
+  therapistTitle: string; onTitleChange: (v: string) => void;
+  therapistLicense: string; onLicenseChange: (v: string) => void;
+  therapistFramework: string; onFrameworkChange: (v: string) => void;
 }) {
   const toggleApproach = (key: string) => {
     onApproachesChange(
@@ -36,6 +40,33 @@ export default function SettingsDrawer({ open, onClose, selected, onSelect, ther
             </div>
             <p className="text-[11px] text-sage-300 mt-2 px-1">הכותרת תתעדכן אוטומטית</p>
           </div>
+
+          {/* ── Signature details for report-builder exports ── */}
+          <div>
+            <p className="text-xs text-sage-500 font-semibold tracking-wider uppercase mb-1">פרטי חתימה לדוחות</p>
+            <p className="text-[11px] text-sage-400 mb-3">ישמשו אוטומטית בסיום דוחות (מחולל הדוחות) — לא נדרש למלא בכל דוח מחדש</p>
+            <div className="flex flex-col gap-2.5">
+              <div className="bg-white/80 rounded-2xl border border-sage-100 px-4 py-3 flex items-center gap-3">
+                <span className="text-lg">🎓</span>
+                <input type="text" placeholder="תואר מקצועי, למשל: עובדת סוציאלית קלינית MSW" value={therapistTitle}
+                  onChange={(e) => onTitleChange(e.target.value)}
+                  className="flex-1 bg-transparent outline-none text-sm text-sage-800 placeholder:text-sage-300" dir="rtl" />
+              </div>
+              <div className="bg-white/80 rounded-2xl border border-sage-100 px-4 py-3 flex items-center gap-3">
+                <span className="text-lg">🪪</span>
+                <input type="text" placeholder="מספר רישום" value={therapistLicense}
+                  onChange={(e) => onLicenseChange(e.target.value)}
+                  className="flex-1 bg-transparent outline-none text-sm text-sage-800 placeholder:text-sage-300" dir="rtl" />
+              </div>
+              <div className="bg-white/80 rounded-2xl border border-sage-100 px-4 py-3 flex items-center gap-3">
+                <span className="text-lg">🏥</span>
+                <input type="text" placeholder="מסגרת טיפולית, למשל: קליניקה פרטית / מרכז X" value={therapistFramework}
+                  onChange={(e) => onFrameworkChange(e.target.value)}
+                  className="flex-1 bg-transparent outline-none text-sm text-sage-800 placeholder:text-sage-300" dir="rtl" />
+              </div>
+            </div>
+          </div>
+
           <div>
             <p className="text-xs text-sage-500 font-semibold tracking-wider uppercase mb-3">סגנון סיכום</p>
             <div className="flex flex-col gap-3">

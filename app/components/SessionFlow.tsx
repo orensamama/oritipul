@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { StyleKey, SessionSummary, SessionState, InputMode, ImageFile, SessionRecord } from "../lib/types";
 import { MOCK_SESSION } from "../lib/constants";
 import { loadDraft, saveDraft, clearDraft, pushHistory } from "../lib/storage";
-import { extractAudioFileFromClipboardEvent, readAudioFileFromClipboard } from "../lib/audio-paste";
+import { extractAudioFileFromClipboardEvent, readAudioFileFromClipboard, getBestMimeType } from "../lib/audio-paste";
 import {
   MicIcon, StopIcon, CheckIcon, XIcon, AudioFileIcon, CameraIcon, PlusIcon,
   PauseIcon, PlayIcon, DownloadIcon, TrashIcon, CopyIcon, ShieldIcon, PasteIcon,
 } from "./icons";
 import { LoadingSpinner, WaveformBars, SectionCard, FilePill, DropZone } from "./shared";
+import VoiceFileTextarea from "./VoiceFileTextarea";
 
 export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRestoreConsumed }: {
   summaryStyle: StyleKey; onBack: () => void;
@@ -23,6 +24,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
   const [micError, setMicError]    = useState("");
   const [file, setFile]            = useState<File | null>(null);        // audio file
   const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);          // multi-image
+  const [additionalNotes, setAdditionalNotes] = useState("");            // combined with whichever input mode is used
 
   // ── Manual timer (supports pause) ────────────────────────────────────────
   const [timerSecs, setTimerSecs]   = useState(0);
@@ -124,7 +126,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
     audioBlobRef.current = null;
     setAudioUrl(null); setErrorMsg("");
     setSummary({ official: "", themes: "", insights: "", goals: "" });
-    setPersonalNotes(""); setFile(null); setImageFiles([]);
+    setPersonalNotes(""); setFile(null); setImageFiles([]); setAdditionalNotes("");
     setMicError(""); setNoteMicError("");
     setMode("mic"); setState("idle"); setNoteState("idle");
     setSessionDate(new Date().toLocaleDateString("he-IL"));
@@ -134,12 +136,6 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
     if (audioRef.current) audioRef.current.value = "";
     if (imageRef.current) imageRef.current.value = "";
   }, [cleanupMain, cleanupNotes]);
-
-  // ── MIME detection ────────────────────────────────────────────────────────
-  const getBestMimeType = () => {
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
-    return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
-  };
 
   // ── Main recording controls ───────────────────────────────────────────────
   const startRecording = async (continuation = false) => {
@@ -255,7 +251,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
       const sumRes = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, style: summaryStyle }),
+        body: JSON.stringify({ text, style: summaryStyle, extraNotes: additionalNotes }),
       });
       if (!sumRes.ok) throw new Error(`שגיאת סיכום (${sumRes.status})`);
       const result = await sumRes.json();
@@ -322,7 +318,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
       setLabel("מסכם פגישה…");
       const sumRes = await fetch("/api/summarize", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, style: summaryStyle }),
+        body: JSON.stringify({ text, style: summaryStyle, extraNotes: additionalNotes }),
       });
       if (!sumRes.ok) throw new Error();
       const result = await sumRes.json();
@@ -356,7 +352,7 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
       setLabel("מסכם פגישה…");
       const sumRes = await fetch("/api/summarize", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images, style: summaryStyle }),
+        body: JSON.stringify({ images, style: summaryStyle, extraNotes: additionalNotes }),
       });
       if (!sumRes.ok) throw new Error();
       const result = await sumRes.json();
@@ -621,6 +617,18 @@ export default function SessionFlow({ summaryStyle, onBack, restoreRecord, onRes
                   {tab.icon}{tab.label}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* ── Additional notes — combinable with whichever input mode above is used ── */}
+          {state === "idle" && (
+            <div className="w-full max-w-[300px]">
+              <VoiceFileTextarea
+                label="הערות נוספות לשילוב בסיכום"
+                placeholder="טקסט נוסף לשילוב עם ההקלטה/הקובץ — או הקליטי/הדביקי/העלי קובץ"
+                value={additionalNotes} onChange={setAdditionalNotes}
+                hint="משולב אוטומטית עם ההקלטה/קובץ השמע/התמונות שתבחרי, לפני השליחה ל-AI"
+              />
             </div>
           )}
 

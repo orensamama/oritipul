@@ -1,10 +1,18 @@
-import type { StyleKey, SessionSummary } from "./types";
+import type { StyleKey, SessionSummary, ReportTemplateKey } from "./types";
 
 // ─── Summary styles ───────────────────────────────────────────────────────────
 export const STYLE_OPTIONS: { key: StyleKey; label: string; desc: string; icon: string }[] = [
   { key: "short",    label: "סיכום נקודות קצר",  desc: "ממוקד ומהיר",        icon: "⚡" },
   { key: "clinical", label: "סיכום קליני מורחב", desc: "מפורט ומקיף",        icon: "📄" },
   { key: "thematic", label: "חלוקה לפי תמות",    desc: "תמות ונקודות להמשך", icon: "🗂️" },
+];
+
+// ─── Report builder — fixed template types ─────────────────────────────────────
+export const REPORT_TEMPLATES: { key: ReportTemplateKey; label: string; desc: string }[] = [
+  { key: "extension",    label: "דוח לבקשת הארכה/הערכה", desc: "מבנה קבוע: הנדון, 4 פסקאות וסיום חתום" },
+  { key: "periodic",     label: "סיכום טיפול תקופתי",     desc: "תאריכים, תדירות, סיבת פנייה, מהלך וסיכום" },
+  { key: "psychiatrist", label: "דוח לפסיכיאטר/רופא",     desc: "פירוט קליני, תפקוד ואבחנה" },
+  { key: "final",        label: "דוח סיכום סופי",          desc: "סיכום התהליך וסיבת הסיום, ללא המלצות להמשך" },
 ];
 
 // ─── Therapeutic approaches ────────────────────────────────────────────────────
